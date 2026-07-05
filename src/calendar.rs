@@ -1,4 +1,5 @@
 use chrono::{DateTime, Local, Timelike};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
@@ -24,6 +25,67 @@ pub fn next_up(events: &[Event], now: DateTime<Local>) -> Option<Event> {
 
 pub fn banner_text(event: &Event) -> String {
     format!("{:02} h {:02} — {}", event.start.hour(), event.start.minute(), event.summary)
+}
+
+#[derive(Deserialize)]
+struct ApiList {
+    #[serde(default)]
+    items: Vec<ApiEvent>,
+}
+
+#[derive(Deserialize)]
+struct ApiEvent {
+    summary: Option<String>,
+    start: Option<ApiTime>,
+    end: Option<ApiTime>,
+    #[serde(default)]
+    attendees: Vec<ApiAttendee>,
+}
+
+#[derive(Deserialize)]
+struct ApiTime {
+    #[serde(rename = "dateTime")]
+    date_time: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiAttendee {
+    #[serde(rename = "self", default)]
+    is_self: bool,
+    #[serde(rename = "responseStatus")]
+    response_status: Option<String>,
+}
+
+fn parse_local(s: &str) -> Option<DateTime<Local>> {
+    DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&Local))
+}
+
+pub fn parse_events(body: &str) -> Vec<Event> {
+    let list: ApiList = match serde_json::from_str(body) {
+        Ok(l) => l,
+        Err(_) => return Vec::new(),
+    };
+    list.items
+        .into_iter()
+        .filter(|e| {
+            !e.attendees.iter().any(|a| {
+                a.is_self && a.response_status.as_deref() == Some("declined")
+            })
+        })
+        .filter_map(|e| {
+            let start = parse_local(e.start.as_ref()?.date_time.as_deref()?)?;
+            let end = e
+                .end
+                .and_then(|t| t.date_time)
+                .and_then(|s| parse_local(&s))
+                .unwrap_or(start);
+            Some(Event {
+                summary: e.summary.unwrap_or_else(|| "(Sans titre)".into()),
+                start,
+                end,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -80,5 +142,48 @@ mod tests {
     fn banderole_zero_padding_24h() {
         assert_eq!(banner_text(&ev("Point produit", t(9, 5), t(10, 0))), "09 h 05 — Point produit");
         assert_eq!(banner_text(&ev("Point produit", t(14, 30), t(15, 0))), "14 h 30 — Point produit");
+    }
+
+    #[test]
+    fn parse_garde_seulement_les_horodates() {
+        let body = r#"{"items":[
+            {"summary":"Journée entière","start":{"date":"2026-07-05"}},
+            {"summary":"Réu","start":{"dateTime":"2026-07-05T14:00:00+02:00"},
+             "end":{"dateTime":"2026-07-05T15:00:00+02:00"}}
+        ]}"#;
+        let events = parse_events(body);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "Réu");
+    }
+
+    #[test]
+    fn parse_refus_self_declined_ignore() {
+        let body = r#"{"items":[{"summary":"Refusée",
+            "start":{"dateTime":"2026-07-05T14:00:00+02:00"},
+            "end":{"dateTime":"2026-07-05T15:00:00+02:00"},
+            "attendees":[{"email":"a@b.c","responseStatus":"accepted"},
+                         {"self":true,"responseStatus":"declined"}]}]}"#;
+        assert!(parse_events(body).is_empty());
+    }
+
+    #[test]
+    fn parse_resume_absent_donne_sans_titre() {
+        let body = r#"{"items":[{"start":{"dateTime":"2026-07-05T14:00:00+02:00"},
+            "end":{"dateTime":"2026-07-05T15:00:00+02:00"}}]}"#;
+        assert_eq!(parse_events(body)[0].summary, "(Sans titre)");
+    }
+
+    #[test]
+    fn parse_fin_absente_donne_fin_egale_debut() {
+        let body = r#"{"items":[{"summary":"Instant",
+            "start":{"dateTime":"2026-07-05T14:00:00+02:00"}}]}"#;
+        let e = &parse_events(body)[0];
+        assert_eq!(e.end, e.start);
+    }
+
+    #[test]
+    fn parse_corps_illisible_donne_vide() {
+        assert!(parse_events("pas du json").is_empty());
+        assert!(parse_events("{}").is_empty());
     }
 }
