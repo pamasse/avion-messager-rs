@@ -6,6 +6,7 @@ mod google;
 mod pkce;
 mod scheduler;
 mod settings;
+mod sprite;
 mod token_store;
 mod tray;
 
