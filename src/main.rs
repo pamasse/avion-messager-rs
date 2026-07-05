@@ -1,3 +1,7 @@
+// Pas de fenêtre console en release (l'app vit dans le tray) ; conservée en
+// debug pour les logs.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod anim;
 mod auth;
 mod autostart;
