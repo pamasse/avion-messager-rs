@@ -23,6 +23,18 @@ pub fn due<'a>(
         .min_by_key(|e| e.start)
 }
 
+pub fn prune_fired(fired: &mut HashSet<String>, now: DateTime<Local>) {
+    fired.retain(|key| {
+        match key
+            .split_once('|')
+            .and_then(|(s, _)| DateTime::parse_from_rfc3339(s).ok())
+        {
+            Some(start) => start.with_timezone(&Local) >= now, // futur → garde
+            None => true, // illisible → conserve
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,5 +80,21 @@ mod tests {
         let none = HashSet::new();
         let got = due(&events, t(14, 31), 10, &none).unwrap();
         assert_eq!(got.summary, "Proche");
+    }
+
+    #[test]
+    fn purge_retire_passe_garde_futur_et_illisible() {
+        let past = ev("Vieille", t(9, 0));
+        let future = ev("Future", t(15, 0));
+        let mut fired: HashSet<String> = [
+            event_key(&past),
+            event_key(&future),
+            "n'importe quoi sans date".to_string(),
+        ]
+        .into();
+        prune_fired(&mut fired, t(10, 0));
+        assert!(!fired.contains(&event_key(&past)));
+        assert!(fired.contains(&event_key(&future)));
+        assert!(fired.contains("n'importe quoi sans date")); // jamais de panique
     }
 }
