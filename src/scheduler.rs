@@ -23,6 +23,10 @@ pub fn due<'a>(
         .min_by_key(|e| e.start)
 }
 
+pub fn gates_blocked(paused: bool, suppress_during_meeting: bool, in_meeting: bool) -> bool {
+    paused || (suppress_during_meeting && in_meeting)
+}
+
 pub fn prune_fired(fired: &mut HashSet<String>, now: DateTime<Local>) {
     fired.retain(|key| {
         match key
@@ -80,6 +84,16 @@ mod tests {
         let none = HashSet::new();
         let got = due(&events, t(14, 31), 10, &none).unwrap();
         assert_eq!(got.summary, "Proche");
+    }
+
+    #[test]
+    fn portes_pause_ou_anti_reunion_en_cours() {
+        assert!(gates_blocked(true, false, false));  // pause seule bloque
+        assert!(gates_blocked(true, true, true));
+        assert!(gates_blocked(false, true, true));   // anti-réunion + en cours
+        assert!(!gates_blocked(false, true, false)); // anti-réunion sans réunion
+        assert!(!gates_blocked(false, false, true)); // réunion sans anti-réunion
+        assert!(!gates_blocked(false, false, false));
     }
 
     #[test]

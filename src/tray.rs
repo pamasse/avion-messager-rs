@@ -1,5 +1,3 @@
-#![allow(dead_code)] // câblé en Task 18
-
 pub enum Item {
     Action { id: &'static str, label: String, enabled: bool },
     Check { id: String, label: String, checked: bool },

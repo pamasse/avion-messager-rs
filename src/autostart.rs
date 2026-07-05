@@ -5,7 +5,6 @@ const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const VALUE: &str = "Avion Messager";
 
 /// Gaté release (spec 4.9) : un build debug n'enregistre pas d'entrée.
-#[allow(dead_code)] // câblé en Task 18
 pub fn apply(enabled: bool) {
     if cfg!(debug_assertions) {
         return;

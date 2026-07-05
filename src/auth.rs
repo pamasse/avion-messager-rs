@@ -1,5 +1,3 @@
-#![allow(dead_code)] // câblé en Task 10/18
-
 use crate::client_config::ClientConfig;
 use chrono::{DateTime, Duration, Local};
 use serde::Deserialize;

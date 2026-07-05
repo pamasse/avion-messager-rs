@@ -7,17 +7,14 @@ fn entry() -> Result<Entry, keyring::Error> {
     Entry::new(SERVICE, USER)
 }
 
-#[allow(dead_code)] // câblé en Task 18
 pub fn save(refresh_token: &str) -> Result<(), keyring::Error> {
     entry()?.set_password(refresh_token)
 }
 
-#[allow(dead_code)] // câblé en Task 18
 pub fn load() -> Option<String> {
     entry().ok()?.get_password().ok()
 }
 
-#[allow(dead_code)] // câblé en Task 18
 pub fn delete() {
     if let Ok(e) = entry() {
         let _ = e.delete_credential();

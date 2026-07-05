@@ -9,7 +9,6 @@ pub struct ClientConfig {
 impl ClientConfig {
     /// Ordre de recherche (spec 4.10) : dossier config app, ./client_config.json,
     /// ../client_config.json.
-    #[allow(dead_code)] // câblé en Task 18
     pub fn load() -> Option<ClientConfig> {
         let candidates = [
             crate::settings::config_dir().join("client_config.json"),

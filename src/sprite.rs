@@ -1,5 +1,3 @@
-#![allow(dead_code)] // câblé en Task 16/18
-
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
 
 const C_RED: u32 = 0xe23b3b;
@@ -12,6 +10,7 @@ const C_GLASS: u32 = 0xbfe3ff;
 const C_DARK: u32 = 0x3b3f47;
 const C_DARKER: u32 = 0x2b2f36;
 const C_HUB: u32 = 0xffcf3f;
+#[allow(dead_code)] // couleur de la palette non utilisée par le rig actuel
 const C_WHITE: u32 = 0xffffff;
 
 const BANNER_RECTS: &[(i32, i32, i32, i32, u32)] = &[

@@ -1,6 +1,6 @@
-#![allow(dead_code)] // câblé en Task 16
-
+#[allow(dead_code)] // dimensions de référence du rig (non consommées hors sprite.rs)
 pub const RIG_W: i32 = 900;
+#[allow(dead_code)]
 pub const RIG_H: i32 = 200;
 pub const FLIGHT_MS: u32 = 12_000;
 const BOB_PERIOD_MS: f32 = 2_500.0;

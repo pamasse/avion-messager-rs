@@ -5,8 +5,6 @@ pub fn time_min(now_utc: DateTime<Utc>) -> String {
     (now_utc - Duration::hours(6)).to_rfc3339_opts(SecondsFormat::Secs, false)
 }
 
-#[allow(dead_code)]
-// câblé en Task 18
 pub fn fetch_events(access_token: &str, now_utc: DateTime<Utc>) -> Result<Vec<Event>, ureq::Error> {
     let body = ureq::get("https://www.googleapis.com/calendar/v3/calendars/primary/events")
         .query("singleEvents", "true")

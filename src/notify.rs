@@ -1,6 +1,5 @@
 use tauri_winrt_notification::Toast;
 
-#[allow(dead_code)] // câblé en Task 18
 pub fn reconnect_toast() {
     let _ = Toast::new(Toast::POWERSHELL_APP_ID)
         .title("Avion Messager")
