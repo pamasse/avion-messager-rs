@@ -1,6 +1,11 @@
 #![allow(dead_code)] // câblé en Task 10/18
 
+use crate::client_config::ClientConfig;
 use chrono::{DateTime, Duration, Local};
+use serde::Deserialize;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::time::{Duration as StdDuration, Instant};
 
 pub(crate) fn urlencode(s: &str) -> String {
     let mut out = String::new();
@@ -76,6 +81,113 @@ pub fn is_invalid_grant(body: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Deserialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    pub expires_in: i64,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+}
+
+pub enum RefreshError {
+    Revoked,
+    Transient(String),
+}
+
+const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+
+fn token_request(form: &[(&str, &str)]) -> Result<TokenResponse, RefreshError> {
+    match ureq::post(TOKEN_URL).send_form(form) {
+        Ok(resp) => {
+            let body = resp.into_string().map_err(|e| RefreshError::Transient(e.to_string()))?;
+            serde_json::from_str(&body).map_err(|e| RefreshError::Transient(e.to_string()))
+        }
+        Err(ureq::Error::Status(code, resp)) => {
+            let body = resp.into_string().unwrap_or_default();
+            if is_invalid_grant(&body) {
+                Err(RefreshError::Revoked)
+            } else {
+                Err(RefreshError::Transient(format!("HTTP {code}")))
+            }
+        }
+        Err(e) => Err(RefreshError::Transient(e.to_string())),
+    }
+}
+
+pub fn exchange_code(
+    cfg: &ClientConfig,
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+) -> Result<TokenResponse, RefreshError> {
+    token_request(&[
+        ("grant_type", "authorization_code"),
+        ("code", code),
+        ("client_id", &cfg.client_id),
+        ("client_secret", &cfg.client_secret),
+        ("redirect_uri", redirect_uri),
+        ("code_verifier", verifier),
+    ])
+}
+
+pub fn refresh(cfg: &ClientConfig, refresh_token: &str) -> Result<TokenResponse, RefreshError> {
+    token_request(&[
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", &cfg.client_id),
+        ("client_secret", &cfg.client_secret),
+    ])
+}
+
+const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(300); // 5 min (spec 4.7)
+
+/// Flux complet : bind loopback AVANT construction de l'URI, ouvre le
+/// navigateur, attend la redirection (<= 5 min), échange le code.
+pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let redirect_uri = format!("http://127.0.0.1:{port}");
+
+    let verifier = crate::pkce::new_verifier();
+    let url = auth_url(&cfg.client_id, &redirect_uri, &crate::pkce::challenge_s256(&verifier));
+    crate::open_browser(&url);
+
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + CONNECT_TIMEOUT;
+    let mut stream = loop {
+        match listener.accept() {
+            Ok((s, _)) => break s,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err("délai de connexion dépassé (5 min)".into());
+                }
+                std::thread::sleep(StdDuration::from_millis(100));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+
+    stream.set_nonblocking(false).ok();
+    let mut line = String::new();
+    BufReader::new(&stream).read_line(&mut line).map_err(|e| e.to_string())?;
+    let result = parse_redirect(line.trim());
+
+    let page = "<html><meta charset=utf-8><body style=\"font-family:sans-serif\">\
+                Avion Messager est connecté — tu peux fermer cet onglet.</body></html>";
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        page.len(),
+        page
+    );
+
+    let code = result?;
+    exchange_code(cfg, &code, &verifier, &redirect_uri).map_err(|e| match e {
+        RefreshError::Revoked => "échange refusé (invalid_grant)".to_string(),
+        RefreshError::Transient(m) => m,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,5 +234,18 @@ mod tests {
         // un substring hors du champ error ne doit PAS matcher (voie robuste, spec 4.7)
         assert!(!is_invalid_grant(r#"{"error":"other","error_description":"invalid_grant"}"#));
         assert!(!is_invalid_grant("pas du json invalid_grant"));
+    }
+
+    #[test]
+    fn token_response_se_deserialise() {
+        let body = r#"{"access_token":"at","expires_in":3599,"refresh_token":"rt","scope":"s","token_type":"Bearer"}"#;
+        let t: TokenResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(t.access_token, "at");
+        assert_eq!(t.expires_in, 3599);
+        assert_eq!(t.refresh_token.as_deref(), Some("rt"));
+        // refresh_token absent (cas refresh) → None
+        let t2: TokenResponse =
+            serde_json::from_str(r#"{"access_token":"at","expires_in":10}"#).unwrap();
+        assert!(t2.refresh_token.is_none());
     }
 }
