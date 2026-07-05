@@ -3,17 +3,39 @@ use std::time::Instant;
 use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, GetMonitorInfoW,
+    MonitorFromPoint, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
+    DIB_RGB_COLORS, HBITMAP, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 struct Flight {
     started: Instant,
+    // Écran du vol : origine (coordonnées bureau virtuel) et dimensions.
+    mon_x: i32,
+    mon_y: i32,
     screen_w: i32,
     screen_h: i32,
     scale: f32,
+}
+
+/// Écran où se trouve le curseur (origine + dimensions) — l'avion vole là où
+/// l'utilisateur regarde, pas forcément sur l'écran principal.
+unsafe fn cursor_monitor() -> (i32, i32, i32, i32) {
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+        let r = mi.rcMonitor;
+        (r.left, r.top, r.right - r.left, r.bottom - r.top)
+    } else {
+        (0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN))
+    }
 }
 
 const TIMER_ID: usize = 1;
@@ -30,16 +52,17 @@ pub fn fly(text: &str) {
         };
         RegisterClassW(&wc); // échec si déjà enregistrée : sans importance
 
-        let screen_w = GetSystemMetrics(SM_CXSCREEN);
-        let screen_h = GetSystemMetrics(SM_CYSCREEN);
+        let (mon_x, mon_y, screen_w, screen_h) = cursor_monitor();
 
+        // Fenêtre créée à l'origine de l'écran cible : avec le processus
+        // per-monitor DPI aware, GetDpiForWindow rend alors le DPI de CET écran.
         let hwnd = CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             class,
             w!(""),
             WS_POPUP,
-            0,
-            0,
+            mon_x,
+            mon_y,
             0,
             0,
             None,
@@ -53,15 +76,16 @@ pub fn fly(text: &str) {
         let bmp = sprite::render_rig(text, scale);
         paint_layered(hwnd, &bmp);
 
-        let flight = Box::new(Flight { started: Instant::now(), screen_w, screen_h, scale });
+        let flight =
+            Box::new(Flight { started: Instant::now(), mon_x, mon_y, screen_w, screen_h, scale });
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(flight) as isize);
 
         let (x, y) = anim::position(0, screen_w, screen_h, scale);
         let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
-            x,
-            y,
+            mon_x + x,
+            mon_y + y,
             bmp.w as i32,
             bmp.h as i32,
             SWP_NOACTIVATE | SWP_SHOWWINDOW,
@@ -130,8 +154,8 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
                     let _ = SetWindowPos(
                         hwnd,
                         HWND_TOPMOST,
-                        x,
-                        y,
+                        f.mon_x + x,
+                        f.mon_y + y,
                         0,
                         0,
                         SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOREDRAW,

@@ -7,13 +7,18 @@ pub enum Item {
 
 pub struct MenuState {
     pub connected: bool,
-    pub upcoming: Vec<String>, // banderoles déjà formatées, <= 5
+    /// (banderole formatée, a un lien visio) — <= 5
+    pub upcoming: Vec<(String, bool)>,
     pub paused: bool,
     pub suppress_during_meeting: bool,
     pub lead_minutes: u32,
 }
 
 pub const LEAD_CHOICES: [u32; 5] = [2, 5, 10, 15, 30];
+
+/// Ids des lignes de réunion cliquables (ouvrent le lien visio) — l'index
+/// correspond à la position dans `prochains(events, now, 5)`.
+pub const MEET_IDS: [&str; 5] = ["meet_0", "meet_1", "meet_2", "meet_3", "meet_4"];
 
 pub fn menu_items(s: &MenuState) -> Vec<Item> {
     let mut items = Vec::new();
@@ -27,8 +32,9 @@ pub fn menu_items(s: &MenuState) -> Vec<Item> {
     if s.upcoming.is_empty() {
         items.push(Item::Action { id: "none", label: "Aucune réunion à venir".into(), enabled: false });
     } else {
-        for line in s.upcoming.iter().take(5) {
-            items.push(Item::Action { id: "meeting", label: line.clone(), enabled: false });
+        // Ligne activée ⇔ lien visio présent : cliquer ouvre la visio.
+        for (i, (line, has_link)) in s.upcoming.iter().take(5).enumerate() {
+            items.push(Item::Action { id: MEET_IDS[i], label: line.clone(), enabled: *has_link });
         }
     }
     items.push(Item::Separator);
@@ -63,7 +69,7 @@ mod tests {
     fn state() -> MenuState {
         MenuState {
             connected: true,
-            upcoming: vec!["09 h 05 — Point produit".into()],
+            upcoming: vec![("09 h 05 — Point produit".into(), false)],
             paused: false,
             suppress_during_meeting: true,
             lead_minutes: 10,
@@ -119,12 +125,24 @@ mod tests {
     #[test]
     fn plus_de_cinq_reunions_tronque_a_cinq() {
         let mut s = state();
-        s.upcoming = (0..7).map(|i| format!("{i:02} h 00 — Réu {i}")).collect();
+        s.upcoming = (0..7).map(|i| (format!("{i:02} h 00 — Réu {i}"), false)).collect();
         let items = menu_items(&s);
-        // en-tête à l'index 2, puis exactement 5 lignes désactivées, puis séparateur
+        // en-tête à l'index 2, puis exactement 5 lignes, puis séparateur
         assert!(matches!(&items[3], Item::Action { label, enabled: false, .. } if label == "00 h 00 — Réu 0"));
         assert!(matches!(&items[7], Item::Action { label, enabled: false, .. } if label == "04 h 00 — Réu 4"));
         assert!(matches!(items[8], Item::Separator));
         assert_eq!(items.len(), 16); // 12 + 4 lignes de plus qu'avec 1 réunion
+    }
+
+    #[test]
+    fn ligne_avec_visio_est_cliquable() {
+        let mut s = state();
+        s.upcoming = vec![
+            ("09 h 05 — Visio".into(), true),
+            ("11 h 00 — Sans visio".into(), false),
+        ];
+        let items = menu_items(&s);
+        assert!(matches!(&items[3], Item::Action { id: "meet_0", enabled: true, .. }));
+        assert!(matches!(&items[4], Item::Action { id: "meet_1", enabled: false, .. }));
     }
 }

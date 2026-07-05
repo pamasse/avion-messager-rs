@@ -6,6 +6,7 @@ pub struct Event {
     pub summary: String,
     pub start: DateTime<Local>,
     pub end: DateTime<Local>,
+    pub meet_link: Option<String>, // hangoutLink Google (visio), si présent
 }
 
 pub fn meeting_in_progress(events: &[Event], now: DateTime<Local>) -> bool {
@@ -38,6 +39,8 @@ struct ApiEvent {
     summary: Option<String>,
     start: Option<ApiTime>,
     end: Option<ApiTime>,
+    #[serde(rename = "hangoutLink")]
+    hangout_link: Option<String>,
     #[serde(default)]
     attendees: Vec<ApiAttendee>,
 }
@@ -83,6 +86,7 @@ pub fn parse_events(body: &str) -> Vec<Event> {
                 summary: e.summary.unwrap_or_else(|| "(Sans titre)".into()),
                 start,
                 end,
+                meet_link: e.hangout_link,
             })
         })
         .collect()
@@ -98,7 +102,7 @@ mod tests {
     }
 
     pub fn ev(summary: &str, start: DateTime<Local>, end: DateTime<Local>) -> Event {
-        Event { summary: summary.into(), start, end }
+        Event { summary: summary.into(), start, end, meet_link: None }
     }
 
     #[test]
@@ -179,6 +183,18 @@ mod tests {
             "start":{"dateTime":"2026-07-05T14:00:00+02:00"}}]}"#;
         let e = &parse_events(body)[0];
         assert_eq!(e.end, e.start);
+    }
+
+    #[test]
+    fn parse_hangout_link_optionnel() {
+        let body = r#"{"items":[
+            {"summary":"Visio","start":{"dateTime":"2026-07-05T14:00:00+02:00"},
+             "hangoutLink":"https://meet.google.com/abc-defg-hij"},
+            {"summary":"Sans visio","start":{"dateTime":"2026-07-05T15:00:00+02:00"}}
+        ]}"#;
+        let events = parse_events(body);
+        assert_eq!(events[0].meet_link.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+        assert_eq!(events[1].meet_link, None);
     }
 
     #[test]

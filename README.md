@@ -74,6 +74,13 @@ target\release\avion-messager.exe
 
 L'app tourne dans le tray (aucune fenêtre visible tant qu'aucun avion n'est déclenché).
 
+- **Clic gauche** sur l'icône : fait passer l'avion (le menu est au clic droit).
+- Dans le menu, une réunion **cliquable** a un lien visio : cliquer ouvre le Meet.
+- L'avion traverse **l'écran où se trouve le curseur** (multi-écrans).
+
+Ces trois comportements sont des évolutions par rapport à la spec v1.1 de la version
+Tauri (qui prévoit des lignes désactivées et l'écran principal uniquement).
+
 ## Réglages — `settings.json`
 
 Stocké dans `%APPDATA%\com.pierre.avionmessager\settings.json`, modifiable depuis le menu

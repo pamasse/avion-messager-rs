@@ -51,7 +51,7 @@ mod tests {
     }
 
     fn ev(summary: &str, start: chrono::DateTime<Local>) -> Event {
-        Event { summary: summary.into(), start, end: start }
+        Event { summary: summary.into(), start, end: start, meet_link: None }
     }
 
     #[test]

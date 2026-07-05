@@ -105,6 +105,7 @@ fn main() {
     // Tray (doit vivre sur le thread principal, gardé vivant via le thread_local TRAY)
     build_tray(&state);
     wire_menu_events(state.clone(), cfg.clone(), SendHwnd(msg_hwnd));
+    wire_tray_click(state.clone(), SendHwnd(msg_hwnd));
 
     // Thread scheduler : 1er tick immédiat, puis toutes les 60 s (spec 4.6)
     {
@@ -262,7 +263,7 @@ fn build_menu_state(state: &Shared) -> tray::MenuState {
         connected: st.connected,
         upcoming: calendar::upcoming(&st.events, now, 5)
             .iter()
-            .map(calendar::banner_text)
+            .map(|e| (calendar::banner_text(e), e.meet_link.is_some()))
             .collect(),
         paused: st.settings.paused,
         suppress_during_meeting: st.settings.suppress_during_meeting,
@@ -311,9 +312,25 @@ fn build_tray(state: &Shared) {
         .with_menu(Box::new(menu))
         .with_icon(icon)
         .with_tooltip("Avion Messager")
+        .with_menu_on_left_click(false) // clic gauche = vol manuel, menu au clic droit
         .build()
         .expect("création du tray");
     TRAY.with(|t| *t.borrow_mut() = Some(tray));
+}
+
+/// Clic gauche sur l'icône tray = « Faire passer l'avion ».
+fn wire_tray_click(state: Shared, post: SendHwnd) {
+    use tray_icon::{MouseButton, MouseButtonState, TrayIconEvent};
+    TrayIconEvent::set_event_handler(Some(move |ev: TrayIconEvent| {
+        if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        } = ev
+        {
+            manual_fly(&state, post);
+        }
+    }));
 }
 
 fn rebuild_tray_menu() {
@@ -344,25 +361,38 @@ fn wire_menu_events(state: Shared, cfg: Arc<client_config::ClientConfig>, post: 
             "suppress_meeting" => {
                 toggle(&state, post, |s| s.suppress_during_meeting = !s.suppress_during_meeting)
             }
-            "fly" => {
-                // manuel : ignore les portes (spec 4.5) ; prochain() ou placeholder
-                let mut st = state.lock().unwrap();
-                let text = calendar::next_up(&st.events, Local::now())
-                    .map(|e| calendar::banner_text(&e))
-                    .unwrap_or_else(|| "Aucune réunion à venir".into());
-                st.banner_slot = Some(text);
-                drop(st);
-                post_msg(post, WM_APP_PASSAGE);
-            }
+            "fly" => manual_fly(&state, post),
             "check_updates" => log::info!("mises à jour : pas encore disponibles dans cette version"),
             "quit" => unsafe { PostQuitMessage(0) },
             _ => {
                 if let Some(m) = id.strip_prefix("lead_").and_then(|v| v.parse().ok()) {
                     toggle(&state, post, |s| s.lead_minutes = m);
+                } else if let Some(i) = id.strip_prefix("meet_").and_then(|v| v.parse::<usize>().ok()) {
+                    // ligne de réunion cliquée : ouvre le lien visio de la i-ème prochaine
+                    let link = {
+                        let st = state.lock().unwrap();
+                        calendar::upcoming(&st.events, Local::now(), 5)
+                            .get(i)
+                            .and_then(|e| e.meet_link.clone())
+                    };
+                    if let Some(link) = link {
+                        open_browser(&link);
+                    }
                 }
             }
         }
     }));
+}
+
+/// Passage manuel : ignore les portes (spec 4.5) ; prochain() ou placeholder.
+fn manual_fly(state: &Shared, post: SendHwnd) {
+    let mut st = state.lock().unwrap();
+    let text = calendar::next_up(&st.events, Local::now())
+        .map(|e| calendar::banner_text(&e))
+        .unwrap_or_else(|| "Aucune réunion à venir".into());
+    st.banner_slot = Some(text);
+    drop(st);
+    post_msg(post, WM_APP_PASSAGE);
 }
 
 fn toggle(state: &Shared, post: SendHwnd, f: impl FnOnce(&mut settings::Settings)) {
