@@ -4,6 +4,7 @@ mod client_config;
 mod google;
 mod pkce;
 mod scheduler;
+mod settings;
 mod token_store;
 
 pub fn open_browser(url: &str) {
