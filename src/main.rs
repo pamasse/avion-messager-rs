@@ -1,8 +1,10 @@
 mod anim;
 mod auth;
+mod autostart;
 mod calendar;
 mod client_config;
 mod google;
+mod notify;
 mod overlay_win;
 mod pkce;
 mod scheduler;
