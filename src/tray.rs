@@ -117,4 +117,16 @@ mod tests {
         assert!(matches!(&leads[2], Item::Check { id, checked: true, .. } if id == "lead_10"));
         assert!(matches!(&leads[4], Item::Check { id, label, checked: false } if id == "lead_30" && label == "30 min"));
     }
+
+    #[test]
+    fn plus_de_cinq_reunions_tronque_a_cinq() {
+        let mut s = state();
+        s.upcoming = (0..7).map(|i| format!("{i:02} h 00 — Réu {i}")).collect();
+        let items = menu_items(&s);
+        // en-tête à l'index 2, puis exactement 5 lignes désactivées, puis séparateur
+        assert!(matches!(&items[3], Item::Action { label, enabled: false, .. } if label == "00 h 00 — Réu 0"));
+        assert!(matches!(&items[7], Item::Action { label, enabled: false, .. } if label == "04 h 00 — Réu 4"));
+        assert!(matches!(items[8], Item::Separator));
+        assert_eq!(items.len(), 16); // 12 + 4 lignes de plus qu'avec 1 réunion
+    }
 }
