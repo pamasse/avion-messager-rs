@@ -1,25 +1,36 @@
-# Avion Messager (réimplémentation native Windows)
+# ✈️ Avion Messager
 
-Overlay desktop : un avion pixel art traverse l'écran en tirant une banderole annonçant la
-prochaine réunion Google Agenda, ~10 min avant chaque réunion et à la demande depuis le
-menu de la barre système (tray).
+> Un avion pixel art traverse ton écran en tirant une banderole avec ta prochaine
+> réunion Google Agenda — quelques minutes avant qu'elle ne commence.
 
-Cette version est une **réimplémentation native Windows** (Win32 + `windows-rs`, sans
-WebView ni runtime JS) du projet `avion-messager` (Tauri v2, cœur Rust + WebView système),
-visant une empreinte disque/mémoire minimale. Voir le dépôt frère `avion-messager` pour la
-version Tauri (multi-plateforme Windows/macOS).
+![Un avion pixel art tirant une banderole « 10 h 30 — Point équipe »](docs/vol-avion.png)
 
-## Build
+L'overlay est **transparent et laisse passer les clics** : il n'interrompt jamais le
+travail. L'application vit dans la barre système, sans fenêtre résidente.
 
-```powershell
-cargo build --release
-```
+Réimplémentation **native Windows** (Rust + Win32, sans WebView ni runtime JS) du
+projet [avion-messager](https://github.com/pamasse/avion-messager) (Tauri v2) :
+un binaire unique de **2,8 Mo**, ~2 Mo de mémoire privée au repos, zéro processus enfant.
 
-Binaire produit : `target\release\avion-messager.exe`.
+## Fonctionnalités
 
-## Installateur MSI
+- 🛩️ **Rappel automatique** : l'avion passe *N* min avant chaque réunion (2/5/10/15/30 min)
+- 🖱️ **Clic gauche** sur l'icône tray : l'avion passe avec la prochaine réunion
+- 📅 **Menu** (clic droit) : les 5 prochaines réunions — celles avec visio sont
+  **cliquables** et ouvrent le Meet
+- ⏸️ **Pause** et mode **« pas d'avion pendant une réunion »** (pour les partages d'écran)
+- 🖥️ **Multi-écrans** : l'avion vole sur l'écran où se trouve le curseur
+- 🚀 Démarrage automatique avec la session (builds release)
 
-Prérequis (une fois) :
+## Installation
+
+### Via l'installateur MSI (recommandé)
+
+Installation **par utilisateur**, sans droits admin : exe dans
+`%LOCALAPPDATA%\Programs\Avion Messager\` + raccourci menu Démarrer.
+Désinstallation via « Applications installées ».
+
+Prérequis de build (une fois) :
 
 ```powershell
 dotnet tool install --global wix --version 5.0.2
@@ -31,111 +42,91 @@ cargo build --release
 wix build wix/main.wxs -ext WixToolset.Util.wixext -o target/wix/AvionMessager.msi
 ```
 
-MSI **par utilisateur** (aucun droit admin) : installe l'exe dans
-`%LOCALAPPDATA%\Programs\Avion Messager\` + raccourci menu Démarrer. Désinstallation
-via « Applications installées ». Pas de mise à jour automatique (choix assumé) : une
-version plus récente du MSI remplace simplement l'ancienne (`MajorUpgrade`).
+Pas de mise à jour automatique (choix assumé) : une version plus récente du MSI
+remplace simplement l'ancienne — l'app en cours d'exécution est fermée proprement
+par l'installateur.
 
-**Build interne** (pour distribuer à une équipe sans que chacun crée son client OAuth) :
-placer `client_config.json` à la racine du repo (git-ignoré), puis
+**Build interne** (distribuer à une équipe sans que chacun crée son client OAuth) :
+placer `client_config.json` à la racine du repo (git-ignoré), puis :
 
 ```powershell
 wix build wix/main.wxs -ext WixToolset.Util.wixext -d IncludeClientConfig -o target/wix/AvionMessager-interne.msi
 ```
 
 Cette variante dépose aussi les identifiants dans `%APPDATA%\com.pierre.avionmessager\`
-(fichier marqué *permanent* : il survit aux mises à niveau — y compris par le MSI
-public — et à la désinstallation).
-⚠️ Ne **jamais** publier ce MSI-là (release GitHub, site…) : il contient le
-`client_secret`. Le MSI public, lui, n'embarque que l'exe.
+(fichier *permanent* : il survit aux mises à niveau et à la désinstallation).
+⚠️ Ne **jamais** publier ce MSI-là : il contient le `client_secret`. Le MSI public
+n'embarque que l'exe.
+
+### Depuis les sources
+
+```powershell
+cargo build --release   # → target\release\avion-messager.exe (2,8 Mo)
+```
 
 ## Configuration Google OAuth — `client_config.json`
 
-Client OAuth **type « Application de bureau »**, scope `calendar.readonly`. Créer un fichier
-JSON plat (deux champs seulement — **pas** le JSON téléchargé par Google, qui enveloppe sous
-`"installed"`) :
+L'application a besoin d'un client OAuth **« Application de bureau »** (scope
+`calendar.readonly`, lecture seule). Créer un fichier JSON **plat** — pas le JSON
+téléchargé par Google, qui enveloppe sous `"installed"` :
 
 ```json
 { "client_id": "…apps.googleusercontent.com", "client_secret": "GOCSPX-…" }
 ```
 
-Ordre de recherche (`ClientConfig::load`, spec §4.10) :
-1. `%APPDATA%\com.pierre.avionmessager\client_config.json` (build installée)
-2. `.\client_config.json` (répertoire courant)
-3. `..\client_config.json` (`cargo run` depuis un sous-dossier)
+Ordre de recherche (spec §4.10) :
 
-Sans ce fichier, l'app affiche une boîte d'erreur propre et quitte.
+1. `%APPDATA%\com.pierre.avionmessager\client_config.json` (app installée)
+2. `.\client_config.json`
+3. `..\client_config.json`
 
-## Lancement
+Sans ce fichier, l'app affiche une erreur claire et quitte. À la connexion, le
+navigateur s'ouvre pour le consentement, puis :
 
-```powershell
-target\release\avion-messager.exe
-```
+![Page « Avion Messager est connecté »](docs/page-connexion.png)
 
-L'app tourne dans le tray (aucune fenêtre visible tant qu'aucun avion n'est déclenché).
-
-- **Clic gauche** sur l'icône : fait passer l'avion (le menu est au clic droit).
-- Dans le menu, une réunion **cliquable** a un lien visio : cliquer ouvre le Meet.
-- L'avion traverse **l'écran où se trouve le curseur** (multi-écrans).
-
-Ces trois comportements sont des évolutions par rapport à la spec v1.1 de la version
-Tauri (qui prévoit des lignes désactivées et l'écran principal uniquement).
+Le refresh token est stocké dans le **trousseau Windows** de la session (jamais
+dans un fichier), et aucun jeton n'est journalisé.
 
 ## Réglages — `settings.json`
 
-Stocké dans `%APPDATA%\com.pierre.avionmessager\settings.json`, modifiable depuis le menu
-tray (persistant, rétrocompatible si un champ manque) :
+`%APPDATA%\com.pierre.avionmessager\settings.json`, piloté depuis le menu tray
+(rétrocompatible : un champ absent prend sa valeur par défaut) :
 
-| Champ | Défaut | Description |
+| Champ | Défaut | Rôle |
 |---|---|---|
-| `lead_minutes` | `10` | Délai avant la réunion pour déclencher l'avion |
-| `paused` | `false` | Coupe les tirs automatiques (le tir manuel reste actif) |
-| `suppress_during_meeting` | `true` | Pas de tir automatique pendant une réunion en cours |
-| `autostart` | `true` | Démarrage avec Windows (gaté en release uniquement) |
+| `lead_minutes` | `10` | délai avant la réunion pour déclencher l'avion |
+| `paused` | `false` | coupe le tir automatique (le manuel reste actif) |
+| `suppress_during_meeting` | `true` | pas de tir automatique pendant une réunion en cours |
+| `autostart` | `true` | démarrage avec Windows (release uniquement) |
 
 ## Performance
 
-Mesuré sur Windows 11, build `cargo build --release` (`opt-level = "z"`, `lto = true`,
-`strip = true`) :
+Mesures Windows 11, build release (`opt-level="z"`, `lto`, `strip`) :
 
-| Mesure | Valeur | Objectif | Résultat |
-|---|---|---|---|
-| Taille binaire | **2,80 Mo** (2 941 952 o) | < 5 Mo | ✅ atteint |
-| RAM au repos (`WorkingSet64`, ~1 min après lancement) | **23,05 Mo** (24 166 400 o) | < 10 Mo | ❌ non atteint |
-| Mémoire privée (`PrivateMemorySize64`) | 1,75 Mo (1 835 008 o) | — | pour référence |
-| Processus enfants | Aucun (le build release utilise `windows_subsystem = "windows"` — pas de fenêtre console ni de `conhost.exe` ; le build debug conserve la console pour les logs) | 0 | ✅ |
+| Mesure | Valeur |
+|---|---|
+| Binaire | **2,80 Mo** |
+| Mémoire privée au repos | **1,75 Mo** |
+| Working set au repos (pages DLL système partagées incluses) | 23 Mo |
+| Processus enfants | aucun |
 
-Commandes utilisées :
+Le vol lui-même est quasi gratuit : le visuel est composé **une seule fois**
+(`UpdateLayeredWindow`), l'animation ne fait que déplacer la fenêtre.
+
+## Développement
 
 ```powershell
-(Get-Item target\release\avion-messager.exe).Length / 1MB
-Get-Process avion-messager | Select-Object WorkingSet64, PrivateMemorySize64
+cargo test                 # logique pure (48 tests, horloge injectée partout)
+cargo test -- --ignored    # + test du trousseau (touche le Credential Manager)
+cargo run -- --fly "Texte" # joue un seul vol avec ce texte, puis quitte
 ```
 
-Le `WorkingSet64` inclut les pages partagées des DLL système Windows (GDI, COM, WinRT…)
-chargées par `windows-rs`, `tray-icon` et la notification Toast ; c'est ce qui explique
-l'écart avec l'objectif de conception. Piste d'optimisation non explorée dans cette tâche :
-mesurer la part imputable à `tauri-winrt-notification`/COM vs. le reste.
-
-## Recette manuelle (à dérouler par un humain — nécessite compte Google + inspection visuelle)
-
-- [ ] 1. `cargo run` sans `client_config.json` → boîte d'erreur propre.
-- [ ] 2. Avec config : tray présent, menu ordre §4.8 exact.
-- [ ] 3. Connexion Google : navigateur → consentement → page « tu peux fermer cet onglet »
-      → menu passe à « Se déconnecter » + réunions listées. Double-clic rapide sur
-      « Se connecter » → un seul navigateur (single-flight).
-- [ ] 4. « Faire passer l'avion » : traversée ~12 s, transparent, click-through, pixel art net.
-- [ ] 5. Créer une réunion test à `maintenant + 11 min` (délai 10) → passage auto ~1 min après.
-- [ ] 6. « En pause » coché → pas de tir automatique ; manuel fonctionne toujours.
-- [ ] 7. Réunion en cours + anti-réunion coché → pas de tir auto ; manuel : « Aucune réunion
-      à venir » si aucune réunion future (§10 ex. 9).
-- [ ] 8. Délai : passer à 2 min → coche déplacée, `settings.json` mis à jour.
-- [ ] 9. Révocation (retirer l'accès sur myaccount.google.com/permissions) → au tick suivant :
-      toast unique, menu « Se connecter à Google ».
-- [ ] 10. Quitter → le process disparaît.
-
-Recette rapide (sans compte Google) : `cargo run -- --fly "Texte"` joue un seul vol avec ce texte puis quitte.
+La spécification fonctionnelle de référence (règles métier normatives §4) vit dans
+le dépôt frère : [`avion-messager/docs/SPECIFICATION.md`](https://github.com/pamasse/avion-messager/blob/main/docs/SPECIFICATION.md).
+Écarts assumés de cette version : réunions cliquables (lien Meet), vol sur l'écran
+du curseur, clic gauche = vol manuel, fenêtre overlay à la taille du visuel.
 
 ## Licence
 
-MIT.
+[MIT](LICENSE)
