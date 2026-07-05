@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Installateur MSI par utilisateur (pas de droits admin) : exe + raccourci menu
+  Démarrer. Construire depuis la racine du repo :
+
+    wix build wix/main.wxs -o target/wix/AvionMessager.msi
+
+  Build interne (embarque client_config.json depuis la racine du repo, pour
+  distribuer aux collègues — ne JAMAIS publier ce MSI-là) :
+
+    wix build wix/main.wxs -d IncludeClientConfig -o target/wix/AvionMessager-interne.msi
+
+  L'UpgradeCode est stable : une version supérieure remplace l'installée.
+  Pas de système de mise à jour automatique (choix assumé).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Avion Messager"
+           Manufacturer="Pierre-Aymeric MASSE"
+           Version="0.1.0"
+           UpgradeCode="E447C646-13A2-47BB-8677-C10C01FBFC50"
+           Scope="perUser"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="Une version plus récente d'Avion Messager est déjà installée." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- %LOCALAPPDATA%\Programs\Avion Messager\avion-messager.exe -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Avion Messager">
+          <Component Id="MainExe" Guid="7A3E12C4-9B0D-4A6E-B1F2-5D8C3E7F0A91">
+            <!-- Emplacement par utilisateur : MSI exige un KeyPath registre HKCU -->
+            <RegistryValue Root="HKCU" Key="Software\com.pierre.avionmessager"
+                           Name="install" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+            <File Id="AvionExe" Source="target\release\avion-messager.exe" Name="avion-messager.exe" />
+            <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+            <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Raccourci menu Démarrer -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="0F5B8D2A-6C41-4E9B-A7D3-2B9E4C1F6A58">
+        <RegistryValue Root="HKCU" Key="Software\com.pierre.avionmessager"
+                       Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="AppShortcut" Name="Avion Messager"
+                  Description="Un avion annonce ta prochaine réunion"
+                  Target="[INSTALLFOLDER]avion-messager.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+      </Component>
+    </StandardDirectory>
+
+    <?ifdef IncludeClientConfig ?>
+    <!-- Build interne uniquement : dépose les identifiants OAuth là où l'app
+         les cherche en premier (%APPDATA%\com.pierre.avionmessager\). -->
+    <StandardDirectory Id="AppDataFolder">
+      <Directory Id="AppConfigDir" Name="com.pierre.avionmessager">
+        <Component Id="ClientConfig" Guid="9D4A7B31-2E85-4C6F-8A19-7F3B5D0C2E64">
+          <RegistryValue Root="HKCU" Key="Software\com.pierre.avionmessager"
+                         Name="client_config" Type="integer" Value="1" KeyPath="yes" />
+          <File Id="ClientConfigJson" Source="client_config.json" Name="client_config.json" />
+          <RemoveFolder Id="RemoveAppConfigDir" Directory="AppConfigDir" On="uninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <?endif?>
+
+  </Package>
+</Wix>

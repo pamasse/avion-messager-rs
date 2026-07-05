@@ -17,6 +17,31 @@ cargo build --release
 
 Binaire produit : `target\release\avion-messager.exe`.
 
+## Installateur MSI
+
+Prérequis (une fois) : `dotnet tool install --global wix --version 5.0.2`.
+
+```powershell
+cargo build --release
+wix build wix/main.wxs -o target/wix/AvionMessager.msi
+```
+
+MSI **par utilisateur** (aucun droit admin) : installe l'exe dans
+`%LOCALAPPDATA%\Programs\Avion Messager\` + raccourci menu Démarrer. Désinstallation
+via « Applications installées ». Pas de mise à jour automatique (choix assumé) : une
+version plus récente du MSI remplace simplement l'ancienne (`MajorUpgrade`).
+
+**Build interne** (pour distribuer à une équipe sans que chacun crée son client OAuth) :
+placer `client_config.json` à la racine du repo (git-ignoré), puis
+
+```powershell
+wix build wix/main.wxs -d IncludeClientConfig -o target/wix/AvionMessager-interne.msi
+```
+
+Cette variante dépose aussi les identifiants dans `%APPDATA%\com.pierre.avionmessager\`.
+⚠️ Ne **jamais** publier ce MSI-là (release GitHub, site…) : il contient le
+`client_secret`. Le MSI public, lui, n'embarque que l'exe.
+
 ## Configuration Google OAuth — `client_config.json`
 
 Client OAuth **type « Application de bureau »**, scope `calendar.readonly`. Créer un fichier
