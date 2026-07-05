@@ -6,6 +6,7 @@ mod pkce;
 mod scheduler;
 mod settings;
 mod token_store;
+mod tray;
 
 pub fn open_browser(url: &str) {
     use windows::core::HSTRING;
