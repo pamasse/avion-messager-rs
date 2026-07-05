@@ -139,6 +139,53 @@ pub fn refresh(cfg: &ClientConfig, refresh_token: &str) -> Result<TokenResponse,
 
 const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(300); // 5 min (spec 4.7)
 
+/// Page servie sur le loopback après la redirection OAuth : l'avion pixel art
+/// (SVG inline, aucune ressource externe) et le verdict dans une banderole.
+const LANDING_TEMPLATE: &str = r##"<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><title>Avion Messager</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
+       justify-content:center;gap:28px;background:linear-gradient(#aee3ff,#eef9ff);
+       font-family:'Segoe UI',sans-serif;color:#2b2f36}
+  svg{shape-rendering:crispEdges}
+  .banner{background:#e23b3b;border-top:5px solid #f7a9a9;border-bottom:5px solid #a81f1f;
+          color:#fff;font-family:Consolas,'Courier New',monospace;font-weight:700;
+          font-size:20px;padding:14px 28px}
+  p{margin:0;opacity:.75}
+</style></head>
+<body>
+<svg width="220" viewBox="24 6 146 98" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avion pixel art">
+  <rect x="26" y="8" width="16" height="34" fill="#c9d4e0"/>
+  <rect x="26" y="8" width="16" height="6" fill="#e6edf4"/>
+  <rect x="40" y="30" width="92" height="10" fill="#e23b3b"/>
+  <rect x="30" y="40" width="112" height="10" fill="#e23b3b"/>
+  <rect x="30" y="50" width="112" height="10" fill="#c62f2f"/>
+  <rect x="40" y="60" width="92" height="10" fill="#c62f2f"/>
+  <rect x="96" y="32" width="14" height="8" fill="#bfe3ff"/>
+  <rect x="114" y="32" width="14" height="8" fill="#bfe3ff"/>
+  <rect x="48" y="70" width="72" height="10" fill="#c9d4e0"/>
+  <rect x="48" y="70" width="72" height="4" fill="#e6edf4"/>
+  <rect x="64" y="80" width="4" height="12" fill="#3b3f47"/>
+  <rect x="104" y="80" width="4" height="12" fill="#3b3f47"/>
+  <rect x="56" y="92" width="20" height="8" fill="#2b2f36"/>
+  <rect x="96" y="92" width="20" height="8" fill="#2b2f36"/>
+  <rect x="142" y="40" width="12" height="20" fill="#2b2f36"/>
+  <rect x="150" y="42" width="10" height="10" fill="#ffcf3f"/>
+  <rect x="160" y="22" width="6" height="56" fill="#3b3f47"/>
+</svg>
+<div class="banner">{{message}}</div>
+<p>{{detail}}</p>
+</body></html>"##;
+
+fn landing_page(ok: bool) -> String {
+    let (message, detail) = if ok {
+        ("Avion Messager est connecté ✈", "Tu peux fermer cet onglet — l'avion s'occupe du reste.")
+    } else {
+        ("La connexion a échoué", "Tu peux fermer cet onglet et réessayer depuis l'icône de la barre système.")
+    };
+    LANDING_TEMPLATE.replace("{{message}}", message).replace("{{detail}}", detail)
+}
+
 /// Flux complet : bind loopback AVANT construction de l'URI, ouvre le
 /// navigateur, attend la redirection (<= 5 min), échange le code.
 pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
@@ -170,14 +217,7 @@ pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
     BufReader::new(&stream).read_line(&mut line).map_err(|e| e.to_string())?;
     let result = parse_redirect(line.trim());
 
-    let message = if result.is_ok() {
-        "Avion Messager est connecté — tu peux fermer cet onglet."
-    } else {
-        "La connexion a été refusée ou a échoué — tu peux fermer cet onglet."
-    };
-    let page = format!(
-        "<html><meta charset=utf-8><body style=\"font-family:sans-serif\">{message}</body></html>"
-    );
+    let page = landing_page(result.is_ok());
     let _ = write!(
         stream,
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -196,6 +236,20 @@ pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn page_loopback_selon_le_verdict() {
+        let ok = landing_page(true);
+        assert!(ok.contains("Avion Messager est connecté"));
+        let ko = landing_page(false);
+        assert!(ko.contains("La connexion a échoué"));
+        // gabarit entièrement résolu (aucun placeholder résiduel) et autonome
+        // (pas de ressource externe ; le xmlns du SVG est un identifiant, pas un chargement)
+        for page in [&ok, &ko] {
+            assert!(!page.contains("{{"));
+            assert!(!page.contains("<script") && !page.contains("<link") && !page.contains("url("));
+        }
+    }
 
     #[test]
     fn url_autorisation_contient_les_parametres_obligatoires() {
