@@ -1,3 +1,4 @@
+mod anim;
 mod auth;
 mod calendar;
 mod client_config;
