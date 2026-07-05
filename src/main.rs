@@ -155,19 +155,29 @@ fn run_message_loop_until_no_window() {
 fn tick(state: &Shared, cfg: &client_config::ClientConfig, post: SendHwnd) {
     let now = Local::now();
 
+    // 0. Pas de décision de tir si déconnecté (spec 4.7) : le cache d'événements et les
+    // menus restent affichés (vol manuel toujours possible), mais aucun tir automatique
+    // ni aucune tentative de refresh/fetch tant que le compte n'est pas reconnecté.
+    let connected = state.lock().unwrap().connected;
+    if !connected {
+        return;
+    }
+
     // 1. Access token (spec 4.7)
-    let (connected, needs) = {
+    let needs = {
         let st = state.lock().unwrap();
-        (st.connected, auth::needs_refresh(st.token_expires_at, now))
+        auth::needs_refresh(st.token_expires_at, now)
     };
-    if connected && needs {
+    if needs {
         if let Some(rt) = token_store::load() {
             match auth::refresh(cfg, &rt) {
                 Ok(t) => {
+                    let new_rt = t.refresh_token;
                     let mut st = state.lock().unwrap();
                     st.access_token = Some(t.access_token);
                     st.token_expires_at = Some(now + Duration::seconds(t.expires_in));
-                    if let Some(new_rt) = t.refresh_token {
+                    drop(st);
+                    if let Some(new_rt) = new_rt {
                         let _ = token_store::save(&new_rt);
                     }
                 }
