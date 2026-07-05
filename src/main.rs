@@ -3,12 +3,15 @@ mod auth;
 mod calendar;
 mod client_config;
 mod google;
+mod overlay_win;
 mod pkce;
 mod scheduler;
 mod settings;
 mod sprite;
 mod token_store;
 mod tray;
+
+use windows::core::w;
 
 pub fn open_browser(url: &str) {
     use windows::core::HSTRING;
@@ -19,4 +22,31 @@ pub fn open_browser(url: &str) {
     }
 }
 
-fn main() {}
+fn main() {
+    unsafe {
+        use windows::Win32::UI::HiDpi::*;
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--fly") {
+        let text = args.get(2).cloned().unwrap_or_else(|| "Prochaine réunion".into());
+        overlay_win::fly(&text);
+        run_message_loop_until_no_window();
+        return;
+    }
+    // (le câblage complet arrive en Task 18)
+}
+
+fn run_message_loop_until_no_window() {
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    unsafe {
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+            if FindWindowW(w!("AvionOverlay"), None).is_err() {
+                break;
+            }
+        }
+    }
+}
