@@ -33,19 +33,31 @@ const PLANE_RECTS: &[(i32, i32, i32, i32, u32)] = &[
     (850, 74, 6, 56, C_DARK),                                       // hélice
 ];
 
-/// Rects de l'avion en SVG, décalés de (dx, dy) — source unique pour tout
-/// rendu vectoriel de l'avion (ex. page loopback OAuth).
-pub fn plane_svg_rects(dx: i32, dy: i32) -> String {
-    PLANE_RECTS
+/// L'avion complet en élément `<svg>` autonome — source unique pour tout rendu
+/// vectoriel de l'avion (ex. page loopback OAuth). Le viewBox est dérivé des
+/// rects (marge de 2 px) : retoucher PLANE_RECTS suffit, rien à synchroniser.
+pub fn plane_svg() -> String {
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for &(x, y, w, h, _) in PLANE_RECTS {
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x + w);
+        max_y = max_y.max(y + h);
+    }
+    let rects: String = PLANE_RECTS
         .iter()
         .map(|&(x, y, w, h, c)| {
-            format!(
-                "<rect x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" fill=\"#{c:06x}\"/>",
-                x + dx,
-                y + dy
-            )
+            format!("<rect x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" fill=\"#{c:06x}\"/>")
         })
-        .collect()
+        .collect();
+    format!(
+        "<svg width=\"220\" viewBox=\"{} {} {} {}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"Avion pixel art\">{}</svg>",
+        min_x - 2,
+        min_y - 2,
+        max_x - min_x + 4,
+        max_y - min_y + 4,
+        rects
+    )
 }
 
 /// Câble pointillé (ligne (560,96)→(700,92), épaisseur 5, tirets 3/7) — approximation en rects.
@@ -225,10 +237,12 @@ mod tests {
 
     #[test]
     fn plane_svg_derive_des_rects_du_sprite() {
-        let svg = plane_svg_rects(-690, -52);
+        let svg = plane_svg();
         assert_eq!(svg.matches("<rect ").count(), PLANE_RECTS.len());
-        // premier rect (dérive) : (716,60) décalé → (26,8), couleur C_GREY
-        assert!(svg.starts_with("<rect x=\"26\" y=\"8\" width=\"16\" height=\"34\" fill=\"#c9d4e0\"/>"));
+        // premier rect = dérive (716,60), couleur C_GREY, aux coordonnées du sprite
+        assert!(svg.contains("<rect x=\"716\" y=\"60\" width=\"16\" height=\"34\" fill=\"#c9d4e0\"/>"));
+        // viewBox dérivé des bornes des rects (716..856 × 60..152, marge 2)
+        assert!(svg.contains("viewBox=\"714 58 144 96\""));
     }
 
     #[test]

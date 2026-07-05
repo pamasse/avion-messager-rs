@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Installateur MSI par utilisateur — commandes de build et variante interne :
      voir README.md § « Installateur MSI ». -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <!-- Version = celle de Cargo.toml : bumper les deux ensemble (MajorUpgrade s'y fie). -->
   <Package Name="Avion Messager"
            Manufacturer="Pierre-Aymeric MASSE"
@@ -10,8 +11,18 @@
            Scope="perUser"
            Compressed="yes">
 
-    <MajorUpgrade DowngradeErrorMessage="Une version plus récente d'Avion Messager est déjà installée." />
+    <!-- AllowSameVersionUpgrades : sans lui, un MSI public et un MSI interne de
+         même version s'installeraient côte à côte (deux entrées « Applications
+         installées »). -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="Une version plus récente d'Avion Messager est déjà installée." />
     <MediaTemplate EmbedCab="yes" />
+
+    <!-- L'app est un process tray résident (autostart) : la fermer proprement
+         avant mise à niveau / désinstallation, sinon dialogue « fichiers en
+         cours d'utilisation » ou redémarrage requis. -->
+    <util:CloseApplication Id="CloseAvion" Target="avion-messager.exe"
+                           CloseMessage="no" TerminateProcess="0" RebootPrompt="no" />
 
     <!-- %LOCALAPPDATA%\Programs\Avion Messager\avion-messager.exe -->
     <StandardDirectory Id="LocalAppDataFolder">
@@ -27,6 +38,14 @@
             <File Id="AvionExe" Source="target\release\avion-messager.exe" Name="avion-messager.exe" />
             <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
             <RemoveFolder Id="RemoveProgramsDir" Directory="ProgramsDir" On="uninstall" />
+          </Component>
+          <!-- Entrée de démarrage auto possédée par le MSI : nettoyée à la
+               désinstallation (l'app la gère ensuite selon le réglage
+               `autostart` — même clé/valeur que src/autostart.rs). -->
+          <Component Id="AutostartRun" Guid="4C8F2D96-1B7A-4E53-9C08-6D2A8F41B7E3">
+            <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                           Name="Avion Messager" Type="string"
+                           Value="&quot;[INSTALLFOLDER]avion-messager.exe&quot;" KeyPath="yes" />
           </Component>
         </Directory>
       </Directory>
@@ -49,11 +68,13 @@
          les cherche en premier (%APPDATA%\com.pierre.avionmessager\). -->
     <StandardDirectory Id="AppDataFolder">
       <Directory Id="AppConfigDir" Name="com.pierre.avionmessager">
-        <Component Id="ClientConfig" Guid="9D4A7B31-2E85-4C6F-8A19-7F3B5D0C2E64">
+        <!-- Permanent : survit aux mises à niveau (y compris par le MSI public,
+             qui sinon supprimerait les identifiants de toute l'équipe) et à la
+             désinstallation. -->
+        <Component Id="ClientConfig" Guid="9D4A7B31-2E85-4C6F-8A19-7F3B5D0C2E64" Permanent="yes">
           <RegistryValue Root="HKCU" Key="Software\com.pierre.avionmessager"
                          Name="client_config" Type="integer" Value="1" KeyPath="yes" />
           <File Id="ClientConfigJson" Source="client_config.json" Name="client_config.json" />
-          <RemoveFolder Id="RemoveAppConfigDir" Directory="AppConfigDir" On="uninstall" />
         </Component>
       </Directory>
     </StandardDirectory>

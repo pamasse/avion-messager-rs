@@ -154,7 +154,7 @@ const LANDING_TEMPLATE: &str = r##"<!doctype html>
   p{margin:0;opacity:.75}
 </style></head>
 <body>
-<svg width="220" viewBox="24 6 146 98" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avion pixel art">{{plane}}</svg>
+{{plane}}
 <div class="banner">{{message}}</div>
 <p>{{detail}}</p>
 </body></html>"##;
@@ -163,10 +163,10 @@ fn landing_page(ok: bool) -> String {
     let (message, detail) = if ok {
         ("Avion Messager est connecté ✈", "Tu peux fermer cet onglet — l'avion s'occupe du reste.")
     } else {
-        ("La connexion a échoué", "Tu peux fermer cet onglet et réessayer depuis l'icône de la barre système.")
+        ("La connexion a été refusée ou a échoué", "Tu peux fermer cet onglet — et réessayer depuis l'icône de la barre système si ce n'était pas voulu.")
     };
     LANDING_TEMPLATE
-        .replace("{{plane}}", &crate::sprite::plane_svg_rects(-690, -52))
+        .replace("{{plane}}", &crate::sprite::plane_svg())
         .replace("{{message}}", message)
         .replace("{{detail}}", detail)
 }
@@ -184,9 +184,65 @@ pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
 
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + CONNECT_TIMEOUT;
-    let mut stream = loop {
+
+    // Accepte des connexions jusqu'à recevoir la vraie redirection OAuth :
+    // les navigateurs Chromium ouvrent des préconnexions muettes vers le
+    // loopback qu'il faut ignorer, et /favicon.ico peut arriver aussi.
+    let (mut stream, redirect) = loop {
+        let mut s = accept_until(&listener, deadline)?;
+        s.set_nonblocking(false).ok();
+        s.set_read_timeout(Some(StdDuration::from_secs(5))).ok();
+        let mut reader = BufReader::new(s.try_clone().map_err(|e| e.to_string())?);
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
+            continue; // préconnexion muette ou socket morte
+        }
+        // Draine les en-têtes restants : fermer avec des octets non lus
+        // provoque un RST qui peut couper la page côté navigateur.
+        loop {
+            let mut header = String::new();
+            match reader.read_line(&mut header) {
+                Ok(n) if n > 2 => continue, // > "\r\n" : encore un en-tête
+                _ => break,
+            }
+        }
+        match parse_redirect(line.trim()) {
+            Ok(code) => break (s, Ok(code)),
+            // refus explicite (?error=...) : terminal
+            Err(e) if e.starts_with("erreur OAuth") => break (s, Err(e)),
+            // autre requête (favicon...) : on répond et on continue d'attendre
+            Err(_) => {
+                let _ = write!(s, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                continue;
+            }
+        }
+    };
+
+    // Échange AVANT d'écrire la page : le navigateur n'affiche « connecté »
+    // que si le refresh token est réellement obtenu.
+    let outcome = redirect.and_then(|code| {
+        exchange_code(cfg, &code, &verifier, &redirect_uri).map_err(|e| match e {
+            RefreshError::Revoked => "échange refusé (invalid_grant)".to_string(),
+            RefreshError::Transient(m) => m,
+        })
+    });
+
+    let page = landing_page(outcome.is_ok());
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        page.len(),
+        page
+    );
+
+    outcome
+}
+
+/// Accepte une connexion sur le listener non bloquant, jusqu'à `deadline`.
+fn accept_until(listener: &TcpListener, deadline: Instant) -> Result<std::net::TcpStream, String> {
+    loop {
         match listener.accept() {
-            Ok((s, _)) => break s,
+            Ok((s, _)) => return Ok(s),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() >= deadline {
                     return Err("délai de connexion dépassé (5 min)".into());
@@ -195,26 +251,7 @@ pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
             }
             Err(e) => return Err(e.to_string()),
         }
-    };
-
-    stream.set_nonblocking(false).ok();
-    let mut line = String::new();
-    BufReader::new(&stream).read_line(&mut line).map_err(|e| e.to_string())?;
-    let result = parse_redirect(line.trim());
-
-    let page = landing_page(result.is_ok());
-    let _ = write!(
-        stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        page.len(),
-        page
-    );
-
-    let code = result?;
-    exchange_code(cfg, &code, &verifier, &redirect_uri).map_err(|e| match e {
-        RefreshError::Revoked => "échange refusé (invalid_grant)".to_string(),
-        RefreshError::Transient(m) => m,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -227,7 +264,7 @@ mod tests {
         let ok = landing_page(true);
         assert!(ok.contains("Avion Messager est connecté"));
         let ko = landing_page(false);
-        assert!(ko.contains("La connexion a échoué"));
+        assert!(ko.contains("La connexion a été refusée ou a échoué"));
         // gabarit entièrement résolu (aucun placeholder résiduel) et autonome
         // (pas de ressource externe ; le xmlns du SVG est un identifiant, pas un chargement)
         for page in [&ok, &ko] {

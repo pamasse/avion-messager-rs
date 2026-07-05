@@ -19,11 +19,16 @@ Binaire produit : `target\release\avion-messager.exe`.
 
 ## Installateur MSI
 
-Prérequis (une fois) : `dotnet tool install --global wix --version 5.0.2`.
+Prérequis (une fois) :
+
+```powershell
+dotnet tool install --global wix --version 5.0.2
+wix extension add -g WixToolset.Util.wixext/5.0.2
+```
 
 ```powershell
 cargo build --release
-wix build wix/main.wxs -o target/wix/AvionMessager.msi
+wix build wix/main.wxs -ext WixToolset.Util.wixext -o target/wix/AvionMessager.msi
 ```
 
 MSI **par utilisateur** (aucun droit admin) : installe l'exe dans
@@ -35,10 +40,12 @@ version plus récente du MSI remplace simplement l'ancienne (`MajorUpgrade`).
 placer `client_config.json` à la racine du repo (git-ignoré), puis
 
 ```powershell
-wix build wix/main.wxs -d IncludeClientConfig -o target/wix/AvionMessager-interne.msi
+wix build wix/main.wxs -ext WixToolset.Util.wixext -d IncludeClientConfig -o target/wix/AvionMessager-interne.msi
 ```
 
-Cette variante dépose aussi les identifiants dans `%APPDATA%\com.pierre.avionmessager\`.
+Cette variante dépose aussi les identifiants dans `%APPDATA%\com.pierre.avionmessager\`
+(fichier marqué *permanent* : il survit aux mises à niveau — y compris par le MSI
+public — et à la désinstallation).
 ⚠️ Ne **jamais** publier ce MSI-là (release GitHub, site…) : il contient le
 `client_secret`. Le MSI public, lui, n'embarque que l'exe.
 
