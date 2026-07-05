@@ -33,6 +33,21 @@ const PLANE_RECTS: &[(i32, i32, i32, i32, u32)] = &[
     (850, 74, 6, 56, C_DARK),                                       // hélice
 ];
 
+/// Rects de l'avion en SVG, décalés de (dx, dy) — source unique pour tout
+/// rendu vectoriel de l'avion (ex. page loopback OAuth).
+pub fn plane_svg_rects(dx: i32, dy: i32) -> String {
+    PLANE_RECTS
+        .iter()
+        .map(|&(x, y, w, h, c)| {
+            format!(
+                "<rect x=\"{}\" y=\"{}\" width=\"{w}\" height=\"{h}\" fill=\"#{c:06x}\"/>",
+                x + dx,
+                y + dy
+            )
+        })
+        .collect()
+}
+
 /// Câble pointillé (ligne (560,96)→(700,92), épaisseur 5, tirets 3/7) — approximation en rects.
 fn tow_line_rects() -> Vec<(i32, i32, i32, i32, u32)> {
     // 14 pas de 10 px le long de x, y interpolé linéairement de 96 à 92
@@ -206,6 +221,14 @@ mod tests {
             }
         }
         assert!(found);
+    }
+
+    #[test]
+    fn plane_svg_derive_des_rects_du_sprite() {
+        let svg = plane_svg_rects(-690, -52);
+        assert_eq!(svg.matches("<rect ").count(), PLANE_RECTS.len());
+        // premier rect (dérive) : (716,60) décalé → (26,8), couleur C_GREY
+        assert!(svg.starts_with("<rect x=\"26\" y=\"8\" width=\"16\" height=\"34\" fill=\"#c9d4e0\"/>"));
     }
 
     #[test]

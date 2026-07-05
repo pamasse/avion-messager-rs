@@ -154,25 +154,7 @@ const LANDING_TEMPLATE: &str = r##"<!doctype html>
   p{margin:0;opacity:.75}
 </style></head>
 <body>
-<svg width="220" viewBox="24 6 146 98" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avion pixel art">
-  <rect x="26" y="8" width="16" height="34" fill="#c9d4e0"/>
-  <rect x="26" y="8" width="16" height="6" fill="#e6edf4"/>
-  <rect x="40" y="30" width="92" height="10" fill="#e23b3b"/>
-  <rect x="30" y="40" width="112" height="10" fill="#e23b3b"/>
-  <rect x="30" y="50" width="112" height="10" fill="#c62f2f"/>
-  <rect x="40" y="60" width="92" height="10" fill="#c62f2f"/>
-  <rect x="96" y="32" width="14" height="8" fill="#bfe3ff"/>
-  <rect x="114" y="32" width="14" height="8" fill="#bfe3ff"/>
-  <rect x="48" y="70" width="72" height="10" fill="#c9d4e0"/>
-  <rect x="48" y="70" width="72" height="4" fill="#e6edf4"/>
-  <rect x="64" y="80" width="4" height="12" fill="#3b3f47"/>
-  <rect x="104" y="80" width="4" height="12" fill="#3b3f47"/>
-  <rect x="56" y="92" width="20" height="8" fill="#2b2f36"/>
-  <rect x="96" y="92" width="20" height="8" fill="#2b2f36"/>
-  <rect x="142" y="40" width="12" height="20" fill="#2b2f36"/>
-  <rect x="150" y="42" width="10" height="10" fill="#ffcf3f"/>
-  <rect x="160" y="22" width="6" height="56" fill="#3b3f47"/>
-</svg>
+<svg width="220" viewBox="24 6 146 98" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Avion pixel art">{{plane}}</svg>
 <div class="banner">{{message}}</div>
 <p>{{detail}}</p>
 </body></html>"##;
@@ -183,7 +165,10 @@ fn landing_page(ok: bool) -> String {
     } else {
         ("La connexion a échoué", "Tu peux fermer cet onglet et réessayer depuis l'icône de la barre système.")
     };
-    LANDING_TEMPLATE.replace("{{message}}", message).replace("{{detail}}", detail)
+    LANDING_TEMPLATE
+        .replace("{{plane}}", &crate::sprite::plane_svg_rects(-690, -52))
+        .replace("{{message}}", message)
+        .replace("{{detail}}", detail)
 }
 
 /// Flux complet : bind loopback AVANT construction de l'URI, ouvre le
