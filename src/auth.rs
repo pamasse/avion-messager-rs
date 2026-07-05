@@ -170,8 +170,14 @@ pub fn run_connect_flow(cfg: &ClientConfig) -> Result<TokenResponse, String> {
     BufReader::new(&stream).read_line(&mut line).map_err(|e| e.to_string())?;
     let result = parse_redirect(line.trim());
 
-    let page = "<html><meta charset=utf-8><body style=\"font-family:sans-serif\">\
-                Avion Messager est connecté — tu peux fermer cet onglet.</body></html>";
+    let message = if result.is_ok() {
+        "Avion Messager est connecté — tu peux fermer cet onglet."
+    } else {
+        "La connexion a été refusée ou a échoué — tu peux fermer cet onglet."
+    };
+    let page = format!(
+        "<html><meta charset=utf-8><body style=\"font-family:sans-serif\">{message}</body></html>"
+    );
     let _ = write!(
         stream,
         "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

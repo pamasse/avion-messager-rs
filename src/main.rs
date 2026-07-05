@@ -306,8 +306,7 @@ fn build_tray(state: &Shared) {
     // BGRA prémultiplié -> RGBA droit (alpha 0/255 : la conversion est un swap R<->B)
     let rgba: Vec<u8> = icon_bmp.px.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
     let icon = tray_icon::Icon::from_rgba(rgba, 32, 32).unwrap();
-    let menu = muda::Menu::new();
-    fill_menu(&menu, tray::menu_items(&build_menu_state(state)));
+    let menu = build_menu(state);
     let tray = tray_icon::TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_icon(icon)

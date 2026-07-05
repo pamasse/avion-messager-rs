@@ -64,7 +64,7 @@ Mesuré sur Windows 11, build `cargo build --release` (`opt-level = "z"`, `lto =
 | Taille binaire | **2,80 Mo** (2 941 952 o) | < 5 Mo | ✅ atteint |
 | RAM au repos (`WorkingSet64`, ~1 min après lancement) | **23,05 Mo** (24 166 400 o) | < 10 Mo | ❌ non atteint |
 | Mémoire privée (`PrivateMemorySize64`) | 1,75 Mo (1 835 008 o) | — | pour référence |
-| Processus enfants | Aucun processus applicatif (seul `conhost.exe`, hôte console standard de Windows pour un binaire de sous-système console — pas un enfant lancé par le code) | 0 | ✅ |
+| Processus enfants | Aucun (le build release utilise `windows_subsystem = "windows"` — pas de fenêtre console ni de `conhost.exe` ; le build debug conserve la console pour les logs) | 0 | ✅ |
 
 Commandes utilisées :
 
@@ -94,6 +94,8 @@ mesurer la part imputable à `tauri-winrt-notification`/COM vs. le reste.
 - [ ] 9. Révocation (retirer l'accès sur myaccount.google.com/permissions) → au tick suivant :
       toast unique, menu « Se connecter à Google ».
 - [ ] 10. Quitter → le process disparaît.
+
+Recette rapide (sans compte Google) : `cargo run -- --fly "Texte"` joue un seul vol avec ce texte puis quitte.
 
 ## Licence
 

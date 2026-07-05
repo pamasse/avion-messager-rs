@@ -12,7 +12,7 @@ pub fn apply(enabled: bool) {
     let Ok((key, _)) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(RUN_KEY) else { return };
     if enabled {
         if let Ok(exe) = std::env::current_exe() {
-            let _ = key.set_value(VALUE, &exe.to_string_lossy().to_string());
+            let _ = key.set_value(VALUE, &format!("\"{}\"", exe.display()));
         }
     } else {
         let _ = key.delete_value(VALUE);

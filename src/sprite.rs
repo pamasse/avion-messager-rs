@@ -80,7 +80,10 @@ fn load_font() -> Option<FontVec> {
 
 /// Texte pixel-art : coverage seuillée (>= 0.5 → blanc opaque), centré sur (cx, baseline).
 fn draw_text(b: &mut Bitmap, text: &str, cx: f32, baseline: f32, size: f32) {
-    let Some(font) = load_font() else { return };
+    let Some(font) = load_font() else {
+        log::error!("aucune police monospace trouvée dans C:\\Windows\\Fonts — banderole sans texte");
+        return;
+    };
     let scaled = font.as_scaled(PxScale::from(size));
     let width: f32 = text.chars().map(|c| scaled.h_advance(scaled.glyph_id(c))).sum();
     let mut pen_x = cx - width / 2.0;
