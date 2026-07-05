@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Timelike};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
@@ -20,6 +20,10 @@ pub fn upcoming(events: &[Event], now: DateTime<Local>, n: usize) -> Vec<Event> 
 
 pub fn next_up(events: &[Event], now: DateTime<Local>) -> Option<Event> {
     upcoming(events, now, 1).into_iter().next()
+}
+
+pub fn banner_text(event: &Event) -> String {
+    format!("{:02} h {:02} — {}", event.start.hour(), event.start.minute(), event.summary)
 }
 
 #[cfg(test)]
@@ -70,5 +74,11 @@ mod tests {
         let events = [ev("A", t(15, 0), t(16, 0)), ev("C", t(11, 0), t(12, 0))];
         assert_eq!(next_up(&events, t(10, 0)), Some(events[1].clone()));
         assert_eq!(next_up(&events, t(16, 0)), None);
+    }
+
+    #[test]
+    fn banderole_zero_padding_24h() {
+        assert_eq!(banner_text(&ev("Point produit", t(9, 5), t(10, 0))), "09 h 05 — Point produit");
+        assert_eq!(banner_text(&ev("Point produit", t(14, 30), t(15, 0))), "14 h 30 — Point produit");
     }
 }
