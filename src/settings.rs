@@ -38,12 +38,12 @@ impl Settings {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // câblé en Task 18
     pub fn load() -> Settings {
         Self::load_from(&config_dir().join("settings.json"))
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code)] // câblé en Task 18
     pub fn save(&self) {
         self.save_to(&config_dir().join("settings.json"));
     }
