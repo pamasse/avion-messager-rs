@@ -16,6 +16,7 @@ mod settings;
 mod sprite;
 mod token_store;
 mod tray;
+mod update;
 
 use chrono::{Duration, Local, Utc};
 use std::cell::RefCell;
@@ -40,6 +41,7 @@ struct AppState {
     fired: HashSet<String>,
     notified_revoked: bool,
     banner_slot: Option<String>, // texte du prochain passage, lu par WM_APP_PASSAGE
+    alert: bool, // réunion dans ≤ 5 min (icône badge) — recalculé à chaque tick
 }
 
 #[derive(Clone, Copy)]
@@ -97,6 +99,7 @@ fn main() {
         fired: HashSet::new(),
         notified_revoked: false,
         banner_slot: None,
+        alert: false,
     }));
     let _ = STATE.set(state.clone());
 
@@ -140,6 +143,13 @@ fn fatal(text: &str) {
     use windows::core::HSTRING;
     unsafe {
         MessageBoxW(None, &HSTRING::from(text), w!("Avion Messager"), MB_ICONERROR);
+    }
+}
+
+pub fn info_box(text: &str) {
+    use windows::core::HSTRING;
+    unsafe {
+        MessageBoxW(None, &HSTRING::from(text), w!("Avion Messager"), MB_ICONINFORMATION);
     }
 }
 
@@ -232,6 +242,14 @@ fn tick(state: &Shared, cfg: &client_config::ClientConfig, post: SendHwnd) {
     // 3. Décision de tir (spec 4.5)
     let mut st = state.lock().unwrap();
     scheduler::prune_fired(&mut st.fired, now);
+    // Icône d'alerte : rebâtir le tray quand on franchit le seuil des 5 min.
+    let imminent = scheduler::imminent(&st.events, now);
+    if imminent != st.alert {
+        st.alert = imminent;
+        drop(st);
+        post_msg(post, WM_APP_MENU);
+        st = state.lock().unwrap();
+    }
     let lead = st.settings.lead_minutes;
     let blocked = scheduler::gates_blocked(
         st.settings.paused,
@@ -271,12 +289,6 @@ fn build_menu_state(state: &Shared) -> tray::MenuState {
     }
 }
 
-fn build_menu(state: &Shared) -> muda::Menu {
-    let menu = muda::Menu::new();
-    fill_menu(&menu, tray::menu_items(&build_menu_state(state)));
-    menu
-}
-
 fn fill_menu(menu: &muda::Menu, items: Vec<tray::Item>) {
     for it in items {
         match it {
@@ -302,16 +314,30 @@ fn fill_menu(menu: &muda::Menu, items: Vec<tray::Item>) {
     }
 }
 
-fn build_tray(state: &Shared) {
-    let icon_bmp = sprite::render_icon();
+fn tray_icon_from(alert: bool) -> tray_icon::Icon {
+    let bmp = sprite::render_icon(alert);
     // BGRA prémultiplié -> RGBA droit (alpha 0/255 : la conversion est un swap R<->B)
-    let rgba: Vec<u8> = icon_bmp.px.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
-    let icon = tray_icon::Icon::from_rgba(rgba, 32, 32).unwrap();
-    let menu = build_menu(state);
+    let rgba: Vec<u8> = bmp.px.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
+    tray_icon::Icon::from_rgba(rgba, 32, 32).unwrap()
+}
+
+/// Info-bulle : la prochaine réunion (heure absolue — jamais périmée), sinon le nom.
+fn tray_tooltip(ms: &tray::MenuState) -> String {
+    ms.upcoming
+        .first()
+        .map(|(line, _)| line.clone())
+        .unwrap_or_else(|| "Avion Messager".into())
+}
+
+fn build_tray(state: &Shared) {
+    let ms = build_menu_state(state);
+    let menu = muda::Menu::new();
+    fill_menu(&menu, tray::menu_items(&ms));
+    let alert = state.lock().unwrap().alert;
     let tray = tray_icon::TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_icon(icon)
-        .with_tooltip("Avion Messager")
+        .with_icon(tray_icon_from(alert))
+        .with_tooltip(tray_tooltip(&ms))
         .with_menu_on_left_click(false) // clic gauche = vol manuel, menu au clic droit
         .build()
         .expect("création du tray");
@@ -335,10 +361,15 @@ fn wire_tray_click(state: Shared, post: SendHwnd) {
 
 fn rebuild_tray_menu() {
     let Some(state) = STATE.get() else { return };
-    let menu = build_menu(state);
+    let ms = build_menu_state(state);
+    let menu = muda::Menu::new();
+    fill_menu(&menu, tray::menu_items(&ms));
+    let alert = state.lock().unwrap().alert;
     TRAY.with(|t| {
         if let Some(tray) = t.borrow().as_ref() {
             let _ = tray.set_menu(Some(Box::new(menu)));
+            let _ = tray.set_tooltip(Some(tray_tooltip(&ms)));
+            let _ = tray.set_icon(Some(tray_icon_from(alert)));
         }
     });
 }
@@ -362,7 +393,7 @@ fn wire_menu_events(state: Shared, cfg: Arc<client_config::ClientConfig>, post: 
                 toggle(&state, post, |s| s.suppress_during_meeting = !s.suppress_during_meeting)
             }
             "fly" => manual_fly(&state, post),
-            "check_updates" => log::info!("mises à jour : pas encore disponibles dans cette version"),
+            "check_updates" => update::check_and_prompt(),
             "quit" => unsafe { PostQuitMessage(0) },
             _ => {
                 if let Some(m) = id.strip_prefix("lead_").and_then(|v| v.parse().ok()) {
@@ -422,9 +453,12 @@ fn spawn_connect(state: Shared, cfg: Arc<client_config::ClientConfig>, post: Sen
                 st.access_token = Some(t.access_token);
                 st.token_expires_at = Some(Local::now() + Duration::seconds(t.expires_in));
                 st.notified_revoked = false;
-                st.last_fetch = None; // force un fetch au prochain tick
+                st.last_fetch = None;
                 drop(st);
                 post_msg(post, WM_APP_MENU);
+                // Fetch immédiat : les réunions apparaissent tout de suite dans
+                // le menu, sans attendre le prochain tick (jusqu'à 60 s).
+                tick(&state, &cfg, post);
             }
             Err(e) => log::warn!("connexion Google : {e}"),
         }

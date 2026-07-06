@@ -27,6 +27,12 @@ pub fn gates_blocked(paused: bool, suppress_during_meeting: bool, in_meeting: bo
     paused || (suppress_during_meeting && in_meeting)
 }
 
+/// Une réunion commence dans ≤ 5 min (pilote l'icône d'alerte du tray).
+pub fn imminent(events: &[Event], now: DateTime<Local>) -> bool {
+    crate::calendar::next_up(events, now)
+        .is_some_and(|e| e.start - now <= Duration::minutes(5))
+}
+
 pub fn prune_fired(fired: &mut HashSet<String>, now: DateTime<Local>) {
     fired.retain(|key| {
         match key
@@ -84,6 +90,16 @@ mod tests {
         let none = HashSet::new();
         let got = due(&events, t(14, 31), 10, &none).unwrap();
         assert_eq!(got.summary, "Proche");
+    }
+
+    #[test]
+    fn imminent_a_5_min_ou_moins() {
+        let events = [ev("Réu", t(14, 30))];
+        assert!(!imminent(&events, t(14, 24)));      // dans 6 min : pas encore
+        assert!(imminent(&events, t(14, 25)));       // dans 5 min : borne incluse
+        assert!(imminent(&events, t(14, 29)));
+        assert!(!imminent(&events, t(14, 30)));      // commencée : plus « à venir »
+        assert!(!imminent(&[], t(14, 25)));          // aucun événement
     }
 
     #[test]

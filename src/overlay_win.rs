@@ -52,6 +52,11 @@ pub fn fly(text: &str) {
         };
         RegisterClassW(&wc); // échec si déjà enregistrée : sans importance
 
+        // Un seul avion à la fois : si un vol est en cours, on ignore celui-ci.
+        if FindWindowW(class, None).is_ok() {
+            return;
+        }
+
         let (mon_x, mon_y, screen_w, screen_h) = cursor_monitor();
 
         // Fenêtre créée à l'origine de l'écran cible : avec le processus

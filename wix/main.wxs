@@ -18,6 +18,10 @@
                   DowngradeErrorMessage="Une version plus récente d'Avion Messager est déjà installée." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Icône affichée dans « Applications installées » -->
+    <Icon Id="AppIcon" SourceFile="wix\avion.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
     <!-- L'app est un process tray résident (autostart) : la fermer proprement
          avant mise à niveau / désinstallation, sinon dialogue « fichiers en
          cours d'utilisation » ou redémarrage requis. -->

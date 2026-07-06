@@ -1,5 +1,7 @@
 # ✈️ Avion Messager
 
+[![CI](https://github.com/pamasse/avion-messager-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/pamasse/avion-messager-rs/actions/workflows/ci.yml)
+
 > Un avion pixel art traverse ton écran en tirant une banderole avec ta prochaine
 > réunion Google Agenda — quelques minutes avant qu'elle ne commence.
 
@@ -20,6 +22,8 @@ un binaire unique de **2,8 Mo**, ~2 Mo de mémoire privée au repos, zéro proce
   **cliquables** et ouvrent le Meet
 - ⏸️ **Pause** et mode **« pas d'avion pendant une réunion »** (pour les partages d'écran)
 - 🖥️ **Multi-écrans** : l'avion vole sur l'écran où se trouve le curseur
+- 🔔 **Icône vivante** : badge rouge quand une réunion commence dans ≤ 5 min ;
+  l'info-bulle affiche la prochaine réunion
 - 🚀 Démarrage automatique avec la session (builds release)
 
 ## Installation
@@ -42,9 +46,10 @@ cargo build --release
 wix build wix/main.wxs -ext WixToolset.Util.wixext -o target/wix/AvionMessager.msi
 ```
 
-Pas de mise à jour automatique (choix assumé) : une version plus récente du MSI
-remplace simplement l'ancienne — l'app en cours d'exécution est fermée proprement
-par l'installateur.
+Pas de mise à jour automatique (choix assumé) : « Rechercher des mises à jour »
+compare la version au dernier tag GitHub et ouvre la page de release s'il y a plus
+récent ; installer le nouveau MSI remplace l'ancien (l'app qui tourne est fermée
+proprement, puis relancée).
 
 **Build interne** (distribuer à une équipe sans que chacun crée son client OAuth) :
 placer `client_config.json` à la racine du repo (git-ignoré), puis :

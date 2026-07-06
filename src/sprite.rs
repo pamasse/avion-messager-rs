@@ -10,7 +10,6 @@ const C_GLASS: u32 = 0xbfe3ff;
 const C_DARK: u32 = 0x3b3f47;
 const C_DARKER: u32 = 0x2b2f36;
 const C_HUB: u32 = 0xffcf3f;
-#[allow(dead_code)] // couleur de la palette non utilisée par le rig actuel
 const C_WHITE: u32 = 0xffffff;
 
 const BANNER_RECTS: &[(i32, i32, i32, i32, u32)] = &[
@@ -170,7 +169,10 @@ pub fn render_rig(text: &str, scale: f32) -> Bitmap {
 }
 
 /// Icône 32×32 pour le tray : avion seul, remappé depuis PLANE_RECTS.
-pub fn render_icon() -> Bitmap {
+/// Icône du tray. `alert` = une réunion commence dans ≤ 5 min : badge rouge
+/// liseré blanc en bas à droite (l'avion étant rouge, seul un badge en coin
+/// se lit comme une notification).
+pub fn render_icon(alert: bool) -> Bitmap {
     let mut b = Bitmap::new(32, 32);
     // avion remappé : la zone (716..856, 60..152) → 32×32 (÷ ~4.6, offset)
     for &(x, y, w, h, c) in PLANE_RECTS {
@@ -179,6 +181,10 @@ pub fn render_icon() -> Bitmap {
         let sw = ((w as f32 * 32.0 / 140.0) as i32).max(1);
         let sh = ((h as f32 * 32.0 / 140.0) as i32).max(1);
         b.fill_rect(sx, sy, sw, sh, c);
+    }
+    if alert {
+        b.fill_rect(18, 18, 14, 14, C_WHITE); // liseré
+        b.fill_rect(20, 20, 10, 10, C_RED);
     }
     b
 }
@@ -247,8 +253,19 @@ mod tests {
 
     #[test]
     fn icone_32x32_non_vide() {
-        let icon = render_icon();
+        let icon = render_icon(false);
         assert_eq!((icon.w, icon.h), (32, 32));
         assert!(icon.px.chunks_exact(4).any(|p| p[3] > 0));
+    }
+
+    #[test]
+    fn icone_alerte_porte_un_badge() {
+        let normale = render_icon(false);
+        let alerte = render_icon(true);
+        assert_ne!(normale.px, alerte.px);
+        // centre du badge (25,25) : rouge #e23b3b opaque, en BGRA
+        let i = (25 * 32 + 25) * 4;
+        assert_eq!(&alerte.px[i..i + 4], &[0x3b, 0x3b, 0xe2, 0xff]);
+        assert_eq!(normale.px[i + 3], 0); // transparent sans alerte
     }
 }
