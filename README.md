@@ -100,7 +100,7 @@ dans un fichier), et aucun jeton n'est journalisé.
 
 | Champ | Défaut | Rôle |
 |---|---|---|
-| `lead_minutes` | `10` | délai avant la réunion pour déclencher l'avion |
+| `lead_minutes` | `2` | délai avant la réunion pour déclencher l'avion |
 | `paused` | `false` | coupe le tir automatique (le manuel reste actif) |
 | `suppress_during_meeting` | `true` | pas de tir automatique pendant une réunion en cours |
 | `autostart` | `true` | démarrage avec Windows (release uniquement) |
@@ -130,7 +130,8 @@ cargo run -- --fly "Texte" # joue un seul vol avec ce texte, puis quitte
 La spécification fonctionnelle de référence (règles métier normatives §4) vit dans
 le dépôt frère : [`avion-messager/docs/SPECIFICATION.md`](https://github.com/pamasse/avion-messager/blob/main/docs/SPECIFICATION.md).
 Écarts assumés de cette version : réunions cliquables (lien Meet), vol sur l'écran
-du curseur, clic gauche = vol manuel, fenêtre overlay à la taille du visuel.
+du curseur, clic gauche = vol manuel, fenêtre overlay à la taille du visuel,
+délai par défaut 2 min (spec : 10).
 
 ## Licence
 

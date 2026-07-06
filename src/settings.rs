@@ -14,7 +14,8 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { lead_minutes: 10, paused: false, suppress_during_meeting: true, autostart: true }
+        // lead_minutes : 2 par défaut (écart assumé vs spec §4.9 qui dit 10).
+        Settings { lead_minutes: 2, paused: false, suppress_during_meeting: true, autostart: true }
     }
 }
 
@@ -58,7 +59,7 @@ mod tests {
     #[test]
     fn fichier_absent_donne_les_defauts() {
         let s = Settings::load_from(&tmp("absent"));
-        assert_eq!(s.lead_minutes, 10);
+        assert_eq!(s.lead_minutes, 2);
         assert!(!s.paused);
         assert!(s.suppress_during_meeting);
         assert!(s.autostart);

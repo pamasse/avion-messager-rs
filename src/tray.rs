@@ -7,18 +7,23 @@ pub enum Item {
 
 pub struct MenuState {
     pub connected: bool,
-    /// (banderole formatée, a un lien visio) — <= 5
+    /// (banderole formatée, a un lien visio) — <= MAX_UPCOMING
     pub upcoming: Vec<(String, bool)>,
     pub paused: bool,
     pub suppress_during_meeting: bool,
     pub lead_minutes: u32,
+    /// Réunion dans ≤ 5 min : pilote l'icône (badge) et non le menu lui-même.
+    pub alert: bool,
 }
 
 pub const LEAD_CHOICES: [u32; 5] = [2, 5, 10, 15, 30];
 
+/// Nombre de réunions affichées dans le menu (et longueur de MEET_IDS).
+pub const MAX_UPCOMING: usize = 5;
+
 /// Ids des lignes de réunion cliquables (ouvrent le lien visio) — l'index
-/// correspond à la position dans `prochains(events, now, 5)`.
-pub const MEET_IDS: [&str; 5] = ["meet_0", "meet_1", "meet_2", "meet_3", "meet_4"];
+/// correspond à la position dans `prochains(events, now, MAX_UPCOMING)`.
+pub const MEET_IDS: [&str; MAX_UPCOMING] = ["meet_0", "meet_1", "meet_2", "meet_3", "meet_4"];
 
 pub fn menu_items(s: &MenuState) -> Vec<Item> {
     let mut items = Vec::new();
@@ -33,7 +38,7 @@ pub fn menu_items(s: &MenuState) -> Vec<Item> {
         items.push(Item::Action { id: "none", label: "Aucune réunion à venir".into(), enabled: false });
     } else {
         // Ligne activée ⇔ lien visio présent : cliquer ouvre la visio.
-        for (i, (line, has_link)) in s.upcoming.iter().take(5).enumerate() {
+        for (i, (line, has_link)) in s.upcoming.iter().take(MAX_UPCOMING).enumerate() {
             items.push(Item::Action { id: MEET_IDS[i], label: line.clone(), enabled: *has_link });
         }
     }
@@ -73,6 +78,7 @@ mod tests {
             paused: false,
             suppress_during_meeting: true,
             lead_minutes: 10,
+            alert: false,
         }
     }
 

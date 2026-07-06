@@ -42,6 +42,10 @@ struct AppState {
     notified_revoked: bool,
     banner_slot: Option<String>, // texte du prochain passage, lu par WM_APP_PASSAGE
     alert: bool, // réunion dans ≤ 5 min (icône badge) — recalculé à chaque tick
+    // Liens visio des lignes du menu, figés à la construction : le clic sur
+    // meet_N ouvre la réunion telle qu'affichée, même si le cache a été
+    // rafraîchi entre l'ouverture du menu et le clic.
+    menu_links: Vec<Option<String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +68,8 @@ static STATE: OnceLock<Shared> = OnceLock::new();
 // depuis la boucle de messages), donc un thread_local est le conteneur correct.
 thread_local! {
     static TRAY: RefCell<Option<tray_icon::TrayIcon>> = const { RefCell::new(None) };
+    // Dernier état d'alerte appliqué à l'icône (évite les réinstallations inutiles).
+    static LAST_ICON_ALERT: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
 fn main() {
@@ -100,6 +106,7 @@ fn main() {
         notified_revoked: false,
         banner_slot: None,
         alert: false,
+        menu_links: Vec::new(),
     }));
     let _ = STATE.set(state.clone());
 
@@ -139,18 +146,19 @@ pub fn open_browser(url: &str) {
     }
 }
 
-fn fatal(text: &str) {
+fn message_box(text: &str, style: MESSAGEBOX_STYLE) {
     use windows::core::HSTRING;
     unsafe {
-        MessageBoxW(None, &HSTRING::from(text), w!("Avion Messager"), MB_ICONERROR);
+        MessageBoxW(None, &HSTRING::from(text), w!("Avion Messager"), style);
     }
 }
 
+fn fatal(text: &str) {
+    message_box(text, MB_ICONERROR);
+}
+
 pub fn info_box(text: &str) {
-    use windows::core::HSTRING;
-    unsafe {
-        MessageBoxW(None, &HSTRING::from(text), w!("Avion Messager"), MB_ICONINFORMATION);
-    }
+    message_box(text, MB_ICONINFORMATION);
 }
 
 fn run_message_loop_until_no_window() {
@@ -239,32 +247,36 @@ fn tick(state: &Shared, cfg: &client_config::ClientConfig, post: SendHwnd) {
         }
     }
 
-    // 3. Décision de tir (spec 4.5)
+    // 3. Décision de tir (spec 4.5) + bascule de l'icône d'alerte.
+    // Tout est calculé sous un seul verrou (aucun appel bloquant ici),
+    // les messages sont postés après l'unique drop.
     let mut st = state.lock().unwrap();
     scheduler::prune_fired(&mut st.fired, now);
-    // Icône d'alerte : rebâtir le tray quand on franchit le seuil des 5 min.
     let imminent = scheduler::imminent(&st.events, now);
-    if imminent != st.alert {
-        st.alert = imminent;
-        drop(st);
-        post_msg(post, WM_APP_MENU);
-        st = state.lock().unwrap();
-    }
+    let alert_changed = imminent != st.alert;
+    st.alert = imminent;
     let lead = st.settings.lead_minutes;
     let blocked = scheduler::gates_blocked(
         st.settings.paused,
         st.settings.suppress_during_meeting,
         calendar::meeting_in_progress(&st.events, now),
     );
+    let mut fire = false;
     if !blocked {
         if let Some(e) = scheduler::due(&st.events, now, lead, &st.fired) {
             let key = scheduler::event_key(e);
             let text = calendar::banner_text(e);
             st.fired.insert(key);
             st.banner_slot = Some(text);
-            drop(st);
-            post_msg(post, WM_APP_PASSAGE);
+            fire = true;
         }
+    }
+    drop(st);
+    if alert_changed {
+        post_msg(post, WM_APP_MENU); // rafraîchit l'icône (badge)
+    }
+    if fire {
+        post_msg(post, WM_APP_PASSAGE);
     }
 }
 
@@ -275,18 +287,32 @@ fn post_msg(h: SendHwnd, msg: u32) {
 }
 
 fn build_menu_state(state: &Shared) -> tray::MenuState {
-    let st = state.lock().unwrap();
+    let mut st = state.lock().unwrap();
     let now = Local::now();
+    let upcoming = calendar::upcoming(&st.events, now, tray::MAX_UPCOMING);
+    // Instantané des liens visio : le handler meet_N résout la ligne telle
+    // qu'elle est affichée, indépendamment des rafraîchissements ultérieurs.
+    st.menu_links = upcoming.iter().map(|e| e.meet_link.clone()).collect();
     tray::MenuState {
         connected: st.connected,
-        upcoming: calendar::upcoming(&st.events, now, 5)
+        upcoming: upcoming
             .iter()
             .map(|e| (calendar::banner_text(e), e.meet_link.is_some()))
             .collect(),
         paused: st.settings.paused,
         suppress_during_meeting: st.settings.suppress_during_meeting,
         lead_minutes: st.settings.lead_minutes,
+        alert: st.alert,
     }
+}
+
+/// Vue complète du tray (menu + info-bulle + état d'alerte de l'icône) —
+/// partagée par la construction initiale et les reconstructions.
+fn make_tray_view(state: &Shared) -> (muda::Menu, String, bool) {
+    let ms = build_menu_state(state);
+    let menu = muda::Menu::new();
+    fill_menu(&menu, tray::menu_items(&ms));
+    (menu, tray_tooltip(&ms), ms.alert)
 }
 
 fn fill_menu(menu: &muda::Menu, items: Vec<tray::Item>) {
@@ -330,17 +356,15 @@ fn tray_tooltip(ms: &tray::MenuState) -> String {
 }
 
 fn build_tray(state: &Shared) {
-    let ms = build_menu_state(state);
-    let menu = muda::Menu::new();
-    fill_menu(&menu, tray::menu_items(&ms));
-    let alert = state.lock().unwrap().alert;
+    let (menu, tooltip, alert) = make_tray_view(state);
     let tray = tray_icon::TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_icon(tray_icon_from(alert))
-        .with_tooltip(tray_tooltip(&ms))
+        .with_tooltip(tooltip)
         .with_menu_on_left_click(false) // clic gauche = vol manuel, menu au clic droit
         .build()
         .expect("création du tray");
+    LAST_ICON_ALERT.with(|c| c.set(Some(alert)));
     TRAY.with(|t| *t.borrow_mut() = Some(tray));
 }
 
@@ -361,15 +385,16 @@ fn wire_tray_click(state: Shared, post: SendHwnd) {
 
 fn rebuild_tray_menu() {
     let Some(state) = STATE.get() else { return };
-    let ms = build_menu_state(state);
-    let menu = muda::Menu::new();
-    fill_menu(&menu, tray::menu_items(&ms));
-    let alert = state.lock().unwrap().alert;
+    let (menu, tooltip, alert) = make_tray_view(state);
     TRAY.with(|t| {
         if let Some(tray) = t.borrow().as_ref() {
             let _ = tray.set_menu(Some(Box::new(menu)));
-            let _ = tray.set_tooltip(Some(tray_tooltip(&ms)));
-            let _ = tray.set_icon(Some(tray_icon_from(alert)));
+            let _ = tray.set_tooltip(Some(tooltip));
+            // HICON réinstallé seulement au changement d'état (évite un
+            // clignotement possible à chaque toggle ou fetch).
+            if LAST_ICON_ALERT.with(|c| c.replace(Some(alert))) != Some(alert) {
+                let _ = tray.set_icon(Some(tray_icon_from(alert)));
+            }
         }
     });
 }
@@ -399,13 +424,10 @@ fn wire_menu_events(state: Shared, cfg: Arc<client_config::ClientConfig>, post: 
                 if let Some(m) = id.strip_prefix("lead_").and_then(|v| v.parse().ok()) {
                     toggle(&state, post, |s| s.lead_minutes = m);
                 } else if let Some(i) = id.strip_prefix("meet_").and_then(|v| v.parse::<usize>().ok()) {
-                    // ligne de réunion cliquée : ouvre le lien visio de la i-ème prochaine
-                    let link = {
-                        let st = state.lock().unwrap();
-                        calendar::upcoming(&st.events, Local::now(), 5)
-                            .get(i)
-                            .and_then(|e| e.meet_link.clone())
-                    };
+                    // ligne de réunion cliquée : lien figé à la construction du
+                    // menu (voir build_menu_state) — jamais une autre réunion
+                    // que celle affichée.
+                    let link = state.lock().unwrap().menu_links.get(i).cloned().flatten();
                     if let Some(link) = link {
                         open_browser(&link);
                     }
