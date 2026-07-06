@@ -63,6 +63,14 @@
       </Component>
     </StandardDirectory>
 
+    <!-- Lance l'app en fin d'installation (et de mise à niveau) : sans ça,
+         rien ne tourne avant la prochaine ouverture de session. Pas lancée
+         à la désinstallation (NOT Installed est faux). -->
+    <CustomAction Id="LaunchApp" FileRef="AvionExe" ExeCommand="" Return="asyncNoWait" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
     <?ifdef IncludeClientConfig ?>
     <!-- Build interne uniquement : dépose les identifiants OAuth là où l'app
          les cherche en premier (%APPDATA%\com.pierre.avionmessager\). -->
